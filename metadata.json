@@ -1,0 +1,6 @@
+{
+  "name": "إدارة الإجازات المرضية - اللواء 43 عمالقة",
+  "description": "تطبيق ويب أحادي الصفحة (SPA) لإدارة ومتابعة الإجازات المرضية لمنتسبي اللواء 43 عمالقة مع إحصائيات ورسوم بيانية وتخزين محلي آمن باستخدام IndexedDB.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
