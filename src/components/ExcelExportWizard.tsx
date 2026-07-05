@@ -114,7 +114,7 @@ export default function ExcelExportWizard({ records, onClose, triggerToast }: Ex
         .map((g) => `${g.year}-${String(g.month).padStart(2, '0')}`);
       setSelectedMonths(defaultMonths);
     }
-  }, [availableYears, allGroups, selectedYears.length]);
+  }, [availableYears.length, selectedYears.length, allGroups]);
 
   // Filter groups according to selections
   const activeGroups = useMemo(() => {

@@ -14,16 +14,24 @@ import {
   Moon,
   Info,
   X,
-  ShieldAlert
+  ShieldAlert,
+  FileText,
+  Award,
+  Store
 } from 'lucide-react';
+import { LeaveRecord } from '../types';
+import NotificationsDropdown from './NotificationsDropdown';
 
 interface SidebarProps {
-  currentPage: 'dashboard' | 'records' | 'analytics' | 'tools';
-  setCurrentPage: (page: 'dashboard' | 'records' | 'analytics' | 'tools') => void;
+  currentPage: 'dashboard' | 'records' | 'analytics' | 'tools' | 'reports' | 'board' | 'pharmacy';
+  setCurrentPage: (page: 'dashboard' | 'records' | 'analytics' | 'tools' | 'reports' | 'board' | 'pharmacy') => void;
   isDarkMode: boolean;
   setIsDarkMode: (val: boolean) => void;
   isOpen: boolean;
   setIsOpen: (val: boolean) => void;
+  records: LeaveRecord[];
+  currentTime?: string;
+  currentDate?: string;
 }
 
 export default function Sidebar({
@@ -32,12 +40,18 @@ export default function Sidebar({
   isDarkMode,
   setIsDarkMode,
   isOpen,
-  setIsOpen
+  setIsOpen,
+  records,
+  currentTime,
+  currentDate
 }: SidebarProps) {
   const menuItems = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
     { id: 'records', label: 'سجل الإجازات', icon: FileSpreadsheet },
     { id: 'analytics', label: 'التحليلات والمؤشرات', icon: BarChart3 },
+    { id: 'reports', label: 'التقارير المتنوعة', icon: FileText },
+    { id: 'board', label: 'اللجنة الطبية والخدمة', icon: Award },
+    { id: 'pharmacy', label: 'صيدلية اللواء والمخزون', icon: Store },
     { id: 'tools', label: 'أدوات النظام', icon: Wrench },
   ] as const;
 
@@ -59,12 +73,26 @@ export default function Sidebar({
               {currentPage === 'dashboard' && 'لوحة التحكم الإحصائية'}
               {currentPage === 'records' && 'سجل الإجازات المرضية'}
               {currentPage === 'analytics' && 'التحليلات والمؤشرات'}
+              {currentPage === 'reports' && 'التقارير المتنوعة'}
+              {currentPage === 'board' && 'اللجنة الطبية والخدمة'}
+              {currentPage === 'pharmacy' && 'الصيدلية والمخزون الطبي'}
               {currentPage === 'tools' && 'أدوات النظام والصيانة'}
             </span>
           </div>
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Real-time Clock & Date inside Mobile Top Bar next to Notification Bell */}
+          {(currentTime || currentDate) && (
+            <div className="flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/50 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-800 font-mono select-none shrink-0 text-center">
+              {currentTime && <span className="font-extrabold text-amber-500 tracking-wide text-[11px] sm:text-xs leading-none">{currentTime}</span>}
+              {currentDate && <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold whitespace-nowrap mt-1 leading-none">{currentDate}</span>}
+            </div>
+          )}
+
+          {/* Urgent Leaves Notification Bell */}
+          <NotificationsDropdown records={records} onNavigateToRecords={() => setCurrentPage('records')} />
+
           {/* Quick theme switcher on top bar */}
           <button
             onClick={toggleTheme}
@@ -217,7 +245,7 @@ export default function Sidebar({
               الجمهورية اليمنية <br />
               القوات المسلحة - ألوية العمالقة
             </p>
-            <p className="text-[9px] text-slate-600 mt-2 font-mono">v1.2.0 - نظام محلي آمن</p>
+            <p className="text-[9px] text-slate-600 mt-2 font-mono">v2.0.0 - الإصدار الثاني المطور</p>
           </div>
         </div>
       </aside>

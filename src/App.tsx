@@ -31,15 +31,34 @@ import Dashboard from './components/Dashboard';
 import Records from './components/Records';
 import Analytics from './components/Analytics';
 import Tools from './components/Tools';
+import ReportsCenter from './components/ReportsCenter';
+import NotificationsDropdown from './components/NotificationsDropdown';
+import MedicalBoard from './components/MedicalBoard';
+import Pharmacy from './components/Pharmacy';
 
 export default function App() {
   // --- Navigation & Sidebar States ---
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'records' | 'analytics' | 'tools'>('dashboard');
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'records' | 'analytics' | 'tools' | 'reports' | 'board' | 'pharmacy'>('dashboard');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // --- Core Records state ---
   const [records, setRecords] = useState<LeaveRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // --- Real-time Clock State ---
+  const [currentTime, setCurrentTime] = useState<string>('');
+  const [currentDate, setCurrentDate] = useState<string>('');
+
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString('ar-YE', { hour12: true }));
+      setCurrentDate(now.toLocaleDateString('ar-YE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+    };
+    updateClock();
+    const timer = setInterval(updateClock, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // --- Dark/Light Mode state ---
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -182,12 +201,15 @@ export default function App() {
         setIsDarkMode={setIsDarkMode}
         isOpen={isMobileSidebarOpen}
         setIsOpen={setIsMobileSidebarOpen}
+        records={records}
+        currentTime={currentTime}
+        currentDate={currentDate}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col md:mr-72 min-w-0 transition-all duration-350">
         {/* Desktop Header Top Bar (Hidden on print) */}
-        <header className="hidden md:flex items-center justify-between px-8 py-5 border-b border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-950 sticky top-0 z-10 no-print">
+        <header className="hidden md:flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-950 sticky top-0 z-10 no-print">
           <div>
             <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500 text-xs font-sans">
               <span>قيادة اللواء 43 عمالقة</span>
@@ -199,23 +221,37 @@ export default function App() {
               {currentPage === 'records' && 'سجل الإجازات المرضية العسكرية'}
               {currentPage === 'analytics' && 'تحليلات الحالات وتتبع التشخيصات'}
               {currentPage === 'tools' && 'أدوات صيانة قاعدة البيانات'}
+              {currentPage === 'reports' && 'مركز التقارير المتنوعة والتحليلات'}
+              {currentPage === 'board' && 'أرشيف اللجنة الطبية وقرارات اللياقة'}
+              {currentPage === 'pharmacy' && 'إدارة الصيدلية والمستلزمات الميدانية'}
             </h2>
           </div>
 
-          {/* User info profile indicator */}
-          <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800">
-            <div className="text-right">
-              <span className="text-[11px] font-bold text-slate-900 dark:text-white block">المسؤول الطبي المناوب</span>
-              <span className="text-[9px] text-slate-400 dark:text-slate-500 block mt-0.5">صلاحية إدارة كاملة</span>
+          <div className="flex items-center gap-4">
+            {/* Urgent Leaves Notification Bell */}
+            <NotificationsDropdown records={records} onNavigateToRecords={() => setCurrentPage('records')} />
+
+            {/* Real-time Clock & Date Capsule */}
+            <div className="flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/50 px-4 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 font-mono select-none text-center">
+              <span className="font-extrabold text-amber-500 text-xs sm:text-[13px] tracking-wide leading-none">{currentTime || '...'}</span>
+              <span className="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold whitespace-nowrap mt-1 leading-none">{currentDate}</span>
             </div>
-            <div className="p-2 bg-amber-500/10 text-amber-500 rounded-lg">
-              <User className="w-4 h-4" />
+
+            {/* User info profile indicator */}
+            <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className="text-right">
+                <span className="text-[11px] font-bold text-slate-900 dark:text-white block">المسؤول الطبي المناوب</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 block mt-0.5">صلاحية إدارة كاملة</span>
+              </div>
+              <div className="p-2 bg-amber-500/10 text-amber-500 rounded-lg">
+                <User className="w-4 h-4" />
+              </div>
             </div>
           </div>
         </header>
 
         {/* Dynamic Page Content Stage */}
-        <main className="flex-1 p-3.5 md:p-8 pb-24 md:pb-8 overflow-y-auto max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-2 sm:p-3 md:p-6 pb-20 md:pb-6 overflow-y-auto max-w-7xl mx-auto w-full">
           {/* Print Header (Only visible on print) */}
           <div className="hidden print-header text-right">
             <div className="border-b-2 border-slate-800 pb-4 mb-6">
@@ -241,7 +277,15 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="w-full"
             >
-              {currentPage === 'dashboard' && <Dashboard records={records} />}
+              {currentPage === 'dashboard' && (
+                <Dashboard
+                  records={records}
+                  onUpdate={handleUpdateRecord}
+                  onAdd={handleAddRecord}
+                  setCurrentPage={setCurrentPage}
+                  triggerToast={triggerToast}
+                />
+              )}
               {currentPage === 'records' && (
                 <Records
                   records={records}
@@ -258,6 +302,23 @@ export default function App() {
                   records={records}
                   onReset={handleResetDatabase}
                   onImport={handleImportRecords}
+                  triggerToast={triggerToast}
+                />
+              )}
+              {currentPage === 'reports' && (
+                <ReportsCenter
+                  records={records}
+                  triggerToast={triggerToast}
+                />
+              )}
+              {currentPage === 'board' && (
+                <MedicalBoard
+                  records={records}
+                  triggerToast={triggerToast}
+                />
+              )}
+              {currentPage === 'pharmacy' && (
+                <Pharmacy
                   triggerToast={triggerToast}
                 />
               )}
