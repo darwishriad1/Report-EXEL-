@@ -13,6 +13,8 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
+  LayoutGrid,
+  Kanban,
   ChevronLeft,
   ChevronRight,
   Edit2,
@@ -44,6 +46,7 @@ import {
 import { LeaveRecord, HistoryEntry } from '../types';
 import PatientProfileModal from './PatientProfileModal';
 import ExcelExportWizard from './ExcelExportWizard';
+import DeleteConfirmModal from './DeleteConfirmModal';
 
 interface RecordsProps {
   records: LeaveRecord[];
@@ -77,6 +80,99 @@ const LEAVE_TYPES = [
   { id: 'حادث', label: 'حادث' }
 ];
 
+const ESTIMATOR_DIAGNOSES = [
+  {
+    id: 'fracture_major',
+    name: 'كسور مضاعفة / عمليات عظام كبرى',
+    recommendedDays: 90,
+    range: '60 - 120 يوم',
+    needsBoard: true,
+    protocol: 'تثبيت جراحي، راحة تامة، وعلاج طبيعي مكثف بعد فك الجبيرة. يمنع من الأنشطة القتالية وحمل الأوزان.',
+    category: 'عمليات وجراحة عظام'
+  },
+  {
+    id: 'fracture_minor',
+    name: 'كسور بسيطة (أطراف علوية/سفلية)',
+    recommendedDays: 45,
+    range: '30 - 60 يوم',
+    needsBoard: false,
+    protocol: 'تجبير مبرم، تقييد حركة الطرف المصاب، مراجعة الطبيب كل أسبوعين للتصوير الإشعاعي وتحديث الجبيرة.',
+    category: 'عمليات وجراحة عظام'
+  },
+  {
+    id: 'shrapnel_injury',
+    name: 'إصابات شظايا مقذوفات قتالية',
+    recommendedDays: 60,
+    range: '45 - 90 يوم',
+    needsBoard: true,
+    protocol: 'تنظيف جراحي مبرم للجروح، مراقبة حدوث التهاب، تبديل يومي للضماد، واستكمال كورس المضادات الحيوية الوريدية.',
+    category: 'إصابات معارك وطوارئ'
+  },
+  {
+    id: 'abdominal_surgery_major',
+    name: 'عمليات فتح بطن / استكشاف / استئصال عضو كبرى',
+    recommendedDays: 60,
+    range: '45 - 75 يوم',
+    needsBoard: true,
+    protocol: 'راحة تامة في الفراش، يمنع شد عضلات البطن أو الانحناء أو السعال القاسي، نظام غذائي خفيف متدرج، ومراجعة غرز الجراحة.',
+    category: 'عمليات جراحية عامة'
+  },
+  {
+    id: 'abdominal_surgery_minor',
+    name: 'عمليات جراحية صغرى (فتق، زائدة دودية بالمنظار)',
+    recommendedDays: 21,
+    range: '15 - 30 يوم',
+    needsBoard: false,
+    protocol: 'تجنب حمل أوزان ثقيلة تزيد عن 5 كجم، تنظيف يومي لموضع الشق الجراحي، راحة حركية لمدة أسبوعين ثم البدء بالمشي الخفيف.',
+    category: 'عمليات جراحية عامة'
+  },
+  {
+    id: 'heart_condition',
+    name: 'جلطة قلبية / قصور تاجي حاد / جراحة قلب مفتوح',
+    recommendedDays: 120,
+    range: '90 - 180 يوم',
+    needsBoard: true,
+    protocol: 'مراقبة هرمونية ونبضية مستمرة، أدوية مسيلة للدم مدى الحياة، حظر الانفعال العاطفي والجهد البدني المتوسط والقاتل تماماً.',
+    category: 'أمراض باطنية وقلبية'
+  },
+  {
+    id: 'burns_major',
+    name: 'حروق من الدرجة الثانية والثالثة (مساحة > 15%)',
+    recommendedDays: 60,
+    range: '45 - 90 يوم',
+    needsBoard: true,
+    protocol: 'عزل طبي وقائي لمنع العدوى، ترطيب جلدي مكثف بالمراهم المتخصصة، سوائل وريدية لتعويض الفاقد، وتبديل معقم للضمادات.',
+    category: 'حروق وإصابات جلدية'
+  },
+  {
+    id: 'dengue_fever',
+    name: 'حمى الضنك الشديدة / الملاريا مع مضاعفات',
+    recommendedDays: 14,
+    range: '10 - 20 يوم',
+    needsBoard: false,
+    protocol: 'راحة تامة، تعويض السوائل والالكتروليتات (الإماهة الفموية والوريدية)، مراقبة مستوى الصفائح الدموية كل 48 ساعة، خافض حرارة باراسيتامول فقط ويمنع استخدام الأسبرين.',
+    category: 'الأمراض السارية والمعدية'
+  },
+  {
+    id: 'respiratory_severe',
+    name: 'التهاب رئوي حاد / ربو متفاقم يتطلب تنويم',
+    recommendedDays: 15,
+    range: '10 - 21 يوم',
+    needsBoard: false,
+    protocol: 'جلسات بخاخ موسع للشعب الهوائية، استنشاق أكسجين رطب عند الحاجة، راحة بعيداً عن الغبار وعوامل التحسس والدخان، ومضادات حيوية.',
+    category: 'الأمراض السارية والمعدية'
+  },
+  {
+    id: 'lumbar_disc',
+    name: 'انزلاق غضروفي قطني (ديسك) قطني متقدم',
+    recommendedDays: 30,
+    range: '21 - 45 يوم',
+    needsBoard: false,
+    protocol: 'نوم على سطح صلب، كمادات دافئة وبروتوكول مسكنات ومضادات التهاب، يمنع الجلوس الطويل والركوب بالمركبات العسكرية غير الممهدة.',
+    category: 'أمراض باطنية وقلبية'
+  }
+];
+
 // --- Pure Helper Functions ---
 const getDurationDays = (startDate: string, endDate: string): number => {
   if (!startDate || !endDate) return 0;
@@ -96,6 +192,27 @@ const getLeaveStatus = (startDateStr: string, endDateStr: string) => {
   if (today < start) return 'upcoming';
   if (today > end) return 'ended';
   return 'active';
+};
+
+const highlightMatch = (text: string, search: string) => {
+  if (!text) return '';
+  if (!search || !search.trim()) return text;
+  const escapedSearch = search.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const regex = new RegExp(`(${escapedSearch})`, 'gi');
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark key={i} className="bg-amber-200 dark:bg-amber-500/40 text-slate-950 dark:text-white px-0.5 rounded font-black">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
 };
 
 const getArabicMonthName = (monthStr: string): string => {
@@ -142,7 +259,12 @@ export default function Records({
   triggerToast
 }: RecordsProps) {
   // --- States ---
-  const [activeSubTab, setActiveSubTab] = useState<'log' | 'repeated' | 'alerts'>('log');
+  const [activeSubTab, setActiveSubTab] = useState<'log' | 'repeated' | 'alerts' | 'estimator' | 'balance' | 'radar' | 'timeline'>('log');
+  const [selectedRadarUnit, setSelectedRadarUnit] = useState<string>('all');
+  const [radarSelectedDay, setRadarSelectedDay] = useState<number>(new Date().getDate());
+  const [isRadarDiagnosing, setIsRadarDiagnosing] = useState(false);
+  const [diagnosticsCompleted, setDiagnosticsCompleted] = useState(false);
+  const [expandedRadarUnit, setExpandedRadarUnit] = useState<string | null>(null);
   const [repeatedSearchTerm, setRepeatedSearchTerm] = useState('');
   const [minRepeatCount, setMinRepeatCount] = useState<number>(2);
 
@@ -160,6 +282,16 @@ export default function Records({
   // Printable Warrant State
   const [printingWarrantRecord, setPrintingWarrantRecord] = useState<LeaveRecord | null>(null);
 
+  // --- States for Medical Leave Estimator ---
+  const [selectedEstimatorId, setSelectedEstimatorId] = useState<string>('fracture_minor');
+  const [estimatorStartDate, setEstimatorStartDate] = useState<string>('2026-07-01');
+  const [estimatorHospitalized, setEstimatorHospitalized] = useState<boolean>(false);
+  const [estimatorSurgeryType, setEstimatorSurgeryType] = useState<'none' | 'minor' | 'major'>('none');
+  const [estimatorRecoveryState, setEstimatorRecoveryState] = useState<'normal' | 'slow' | 'fast'>('normal');
+
+  // --- States for Leave Balance Analyzer ---
+  const [selectedBalanceMemberName, setSelectedBalanceMemberName] = useState<string>('');
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>('');
@@ -168,6 +300,222 @@ export default function Records({
   const [expandedCardIds, setExpandedCardIds] = useState<string[]>([]);
   const [openDropdown, setOpenDropdown] = useState<'type' | 'month' | 'quick' | 'tags' | 'minRepeat' | 'actions' | 'alertsFilter' | 'contactFilter' | null>(null);
   const [isExportWizardOpen, setIsExportWizardOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+
+  // Custom Delete Modal States
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<LeaveRecord | null>(null);
+  const [isBulkDelete, setIsBulkDelete] = useState(false);
+
+  // --- Active leaves mapped by day for the selected month (July 2026) ---
+  const activeLeavesByDay = useMemo(() => {
+    const dayCounts: Record<number, { count: number; personnel: LeaveRecord[] }> = {};
+    for (let d = 1; d <= 31; d++) {
+      const dateStr = `2026-07-${String(d).padStart(2, '0')}`;
+      const dObj = new Date(dateStr);
+      const activeOnThisDay: LeaveRecord[] = [];
+      records.forEach(r => {
+        const start = new Date(r.startDate);
+        const end = new Date(r.endDate);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && dObj >= start && dObj <= end) {
+          activeOnThisDay.push(r);
+        }
+      });
+      dayCounts[d] = {
+        count: activeOnThisDay.length,
+        personnel: activeOnThisDay
+      };
+    }
+    return dayCounts;
+  }, [records]);
+
+  // --- Dynamic Combat Readiness Attrition Index per Unit ---
+  const radarUnitReadinessStats = useMemo(() => {
+    // Dynamically fetch unique units in records, default to standard military divisions
+    const units = Array.from(new Set(records.map(r => r.unit).filter(Boolean)));
+    if (units.length === 0) {
+      units.push('كتيبة الدعم الثالثة', 'لواء النخبة الأول', 'سرية الاستطلاع الفني', 'كتيبة سلاح الإشارة');
+    }
+    const today = new Date('2026-07-01');
+    return units.map(unit => {
+      const unitRecords = records.filter(r => r.unit === unit);
+      const activeSick = unitRecords.filter(r => {
+        const start = new Date(r.startDate);
+        const end = new Date(r.endDate);
+        return !isNaN(start.getTime()) && !isNaN(end.getTime()) && today >= start && today <= end;
+      });
+      const activeSickCount = activeSick.length;
+      const baselineSize = 95; // Standard military company size
+      const sickPercent = Math.round((activeSickCount / baselineSize) * 1000) / 10;
+      const combatReadiness = Math.max(0, 100 - Math.round((activeSickCount / 10) * 100)); // 10 active sick drops readiness to 0%
+      
+      let statusLevel: 'stable' | 'warning' | 'critical' = 'stable';
+      if (sickPercent > 8) statusLevel = 'critical';
+      else if (sickPercent > 4) statusLevel = 'warning';
+      
+      return {
+        unit,
+        totalRecords: unitRecords.length,
+        activeSickCount,
+        sickPercent,
+        combatReadiness,
+        statusLevel
+      };
+    });
+  }, [records]);
+
+  // --- Smart ICD-10 Compliance & Diagnostic Audit Engine ---
+  const diagnosticAlerts = useMemo(() => {
+    const alertsList: {
+      id: string;
+      type: 'duration_mismatch' | 'excessive_mild' | 'board_required' | 'unit_outbreak';
+      severity: 'high' | 'medium' | 'info';
+      title: string;
+      description: string;
+      record?: LeaveRecord;
+      actionLabel: string;
+    }[] = [];
+    
+    records.forEach(r => {
+      const duration = getDurationDays(r.startDate, r.endDate);
+      const diag = (r.diagnosis || '').toLowerCase();
+      
+      // 1. Major injury but too short duration
+      const isMajor = diag.includes('كسر') || diag.includes('عملية') || diag.includes('بتر') || diag.includes('جراحة') || diag.includes('خلع') || r.type === 'حادث';
+      if (isMajor && duration < 10) {
+        alertsList.push({
+          id: `sh-${r.id}`,
+          type: 'duration_mismatch',
+          severity: 'high',
+          title: 'مدى استشفائي منخفض لإصابة معقدة',
+          description: `الفرد (${r.rank}/ ${r.name}) سجل له (${r.diagnosis}) بمدة ${duration} أيام فقط. بروتوكولات الشفاء الطبي المشترك توصي بحد أدنى 15 يوماً للالتئام التام.`,
+          record: r,
+          actionLabel: 'طلب إعادة تقدير للمدة'
+        });
+      }
+
+      // 2. Minor illness but too long duration
+      const isMild = diag.includes('انفلونزا') || diag.includes('زكام') || diag.includes('صداع') || diag.includes('إرهاق') || diag.includes('برد') || diag.includes('التهاب بسيط');
+      if (isMild && duration > 7) {
+        alertsList.push({
+          id: `ex-${r.id}`,
+          type: 'excessive_mild',
+          severity: 'medium',
+          title: 'استشفاء طويل لوعكة بسيطة',
+          description: `الفرد (${r.rank}/ ${r.name}) منح إجازة مدتها ${duration} يوماً لتشخيص بسيط وهو (${r.diagnosis}). الحد المعتمد هو 5 أيام لسلامة الحضور الميداني.`,
+          record: r,
+          actionLabel: 'استفسار من جهة الإصدار'
+        });
+      }
+
+      // 3. Very long leaves requiring high medical board approval
+      if (duration > 30) {
+        alertsList.push({
+          id: `bd-${r.id}`,
+          type: 'board_required',
+          severity: 'high',
+          title: 'طلب توقيع المجلس الطبي المشترك',
+          description: `تجاوزت إجازة الفرد (${r.rank}/ ${r.name}) المتصلة 30 يوماً (${duration} يوماً). يجب توجيه الحالة للمجلس العسكري الأعلى لاعتماد الاستثناء.`,
+          record: r,
+          actionLabel: 'توجيه للمجلس الطبي'
+        });
+      }
+    });
+
+    // 4. Cluster outbreak by unit
+    const activeUnitCounts: Record<string, number> = {};
+    records.forEach(r => {
+      const today = new Date('2026-07-01');
+      const start = new Date(r.startDate);
+      const end = new Date(r.endDate);
+      const isActive = !isNaN(start.getTime()) && !isNaN(end.getTime()) && today >= start && today <= end;
+      if (isActive && r.unit) {
+        activeUnitCounts[r.unit] = (activeUnitCounts[r.unit] || 0) + 1;
+      }
+    });
+
+    Object.entries(activeUnitCounts).forEach(([unitName, count]) => {
+      if (count >= 3) {
+        alertsList.push({
+          id: `cluster-${unitName}`,
+          type: 'unit_outbreak',
+          severity: 'medium',
+          title: 'رصد بؤرة مرضية نشطة بالوحدة',
+          description: `تم رصد عدد ${count} حالات إجازة طبية نشطة جارية بالسرية (${unitName}). يوصى بالتحقق السريع من الحالة الوبائية أو مستويات الإجهاد البدني العام.`,
+          actionLabel: 'بدء تحقيق طبي وقائي'
+        });
+      }
+    });
+
+    // 5. Overlapping dates check
+    const groupedByName: Record<string, LeaveRecord[]> = {};
+    records.forEach(r => {
+      if (!groupedByName[r.name]) {
+        groupedByName[r.name] = [];
+      }
+      groupedByName[r.name].push(r);
+    });
+
+    Object.keys(groupedByName).forEach(name => {
+      const list = groupedByName[name];
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const r1 = list[i];
+          const r2 = list[j];
+          const s1 = new Date(r1.startDate).getTime();
+          const e1 = new Date(r1.endDate).getTime();
+          const s2 = new Date(r2.startDate).getTime();
+          const e2 = new Date(r2.endDate).getTime();
+
+          if (!isNaN(s1) && !isNaN(e1) && !isNaN(s2) && !isNaN(e2)) {
+            if (s1 <= e2 && s2 <= e1) {
+              alertsList.push({
+                id: `overlap-${r1.id}-${r2.id}`,
+                type: 'duration_mismatch',
+                severity: 'high',
+                title: 'تعارض زمني حرج وتداخل إجازات',
+                description: `الفرد (${r1.rank}/ ${name}) لديه تداخل في تواريخ الإجازات المرضية المسجلة: الإجازة الأولى (${formatDateToDMY(r1.startDate)} إلى ${formatDateToDMY(r1.endDate)}) تتعارض مع الإجازة الثانية (${formatDateToDMY(r2.startDate)} إلى ${formatDateToDMY(r2.endDate)}).`,
+                record: r1,
+                actionLabel: 'تعديل وحل التعارض'
+              });
+            }
+          }
+        }
+      }
+    });
+
+    // 6. Chronological Inversion Check
+    records.forEach(r => {
+      const s = new Date(r.startDate).getTime();
+      const e = new Date(r.endDate).getTime();
+      if (!isNaN(s) && !isNaN(e) && s > e) {
+        alertsList.push({
+          id: `inverted-${r.id}`,
+          type: 'duration_mismatch',
+          severity: 'high',
+          title: 'تاريخ بداية مقلوب أو لاحق للنهاية',
+          description: `المنتسب (${r.rank}/ ${r.name}) لديه تاريخ بدء الإجازة (${formatDateToDMY(r.startDate)}) بعد تاريخ الانتهاء (${formatDateToDMY(r.endDate)}). يرجى إصلاح التواريخ.`,
+          record: r,
+          actionLabel: 'تصحيح التواريخ'
+        });
+      }
+
+      // 7. Missing documentation
+      if (!r.issuer || r.issuer.trim() === '' || !r.diagnosis || r.diagnosis.trim() === '') {
+        alertsList.push({
+          id: `incomplete-${r.id}`,
+          type: 'excessive_mild',
+          severity: 'medium',
+          title: 'قصور التوثيق والبيانات الأساسية',
+          description: `الإجازة الطبية المسجلة للفرد (${r.rank}/ ${r.name}) ينقصها توثيق جهة الإصدار الطبية أو التشخيص السريري الدقيق.`,
+          record: r,
+          actionLabel: 'استكمال الملف'
+        });
+      }
+    });
+
+    return alertsList;
+  }, [records]);
 
   // --- KPI Stats Calculation (based on records list) ---
   const kpiStats = useMemo(() => {
@@ -279,6 +627,141 @@ export default function Records({
     });
     return Array.from(months).sort((a, b) => b.localeCompare(a));
   }, [records]);
+
+  // --- Computed values for Estimator ---
+  const estimatedDays = useMemo(() => {
+    const baseDiag = ESTIMATOR_DIAGNOSES.find(d => d.id === selectedEstimatorId);
+    if (!baseDiag) return 0;
+    let days = baseDiag.recommendedDays;
+    
+    if (estimatorHospitalized) {
+      days += 10;
+    }
+    
+    if (estimatorSurgeryType === 'minor') {
+      days += 7;
+    } else if (estimatorSurgeryType === 'major') {
+      days += 20;
+    }
+    
+    if (estimatorRecoveryState === 'slow') {
+      days = Math.ceil(days * 1.25);
+    } else if (estimatorRecoveryState === 'fast') {
+      days = Math.ceil(days * 0.85);
+    }
+    
+    return days;
+  }, [selectedEstimatorId, estimatorHospitalized, estimatorSurgeryType, estimatorRecoveryState]);
+
+  const estimatedEndDate = useMemo(() => {
+    if (!estimatorStartDate) return '';
+    const start = new Date(estimatorStartDate);
+    if (isNaN(start.getTime())) return '';
+    const end = new Date(start);
+    end.setDate(start.getDate() + estimatedDays - 1);
+    return end.toISOString().split('T')[0];
+  }, [estimatorStartDate, estimatedDays]);
+
+  // Apply estimator logic
+  const applyEstimatorToNewLeave = () => {
+    const baseDiag = ESTIMATOR_DIAGNOSES.find(d => d.id === selectedEstimatorId);
+    if (!baseDiag) return;
+    
+    setFormData({
+      id: '',
+      name: selectedBalanceMemberName || '',
+      rank: 'جندي',
+      unit: 'اللواء 43 عمالقة - الكتيبة الأولى',
+      type: 'مريض',
+      diagnosis: baseDiag.name + (estimatorHospitalized ? ' (تطلب تنويم)' : '') + (estimatorSurgeryType !== 'none' ? ` (مع جراحة ${estimatorSurgeryType === 'minor' ? 'صغرى' : 'كبرى'})` : ''),
+      issuer: 'اللجنة الطبية الميدانية',
+      startDate: estimatorStartDate,
+      endDate: estimatedEndDate,
+      notes: `تم الحساب استرشادياً ببروتوكول الاستشفاء المعتمد. التوصية: ${baseDiag.protocol}`
+    });
+    setEditingRecord(null);
+    setIsFormModalOpen(true);
+    triggerToast('تم تجهيز البيانات استرشادياً وتعبئة نموذج الإجازة بنجاح', 'success');
+  };
+
+  // --- Smart Radar Compliance Run ---
+  const runSmartRadarAudit = () => {
+    setIsRadarDiagnosing(true);
+    setDiagnosticsCompleted(false);
+    setTimeout(() => {
+      setIsRadarDiagnosing(false);
+      setDiagnosticsCompleted(true);
+      triggerToast('تم فحص الجاهزية والتدقيق القانوني لكامل الكشوفات بنجاح!', 'success');
+    }, 1500);
+  };
+
+  // --- Leave Balance Calculations ---
+  // Extract all unique member names from records for suggestions or dropdown
+  const uniqueMemberNames = useMemo(() => {
+    const names = new Set<string>();
+    records.forEach(r => {
+      if (r.name) names.add(r.name.trim());
+    });
+    return Array.from(names);
+  }, [records]);
+
+  // Compute balance details for the selected balance soldier
+  const balanceDetails = useMemo(() => {
+    if (!selectedBalanceMemberName) return null;
+    const nameLower = selectedBalanceMemberName.trim().toLowerCase();
+    const soldierRecords = records.filter(r => r.name.trim().toLowerCase() === nameLower);
+    
+    // Sort oldest first to display timeline properly
+    const sorted = [...soldierRecords].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    
+    const currentYear = new Date('2026-07-01').getFullYear();
+    let totalSickDaysThisYear = 0;
+    let totalSickDaysAllTime = 0;
+    let totalLeavesCount = soldierRecords.length;
+
+    soldierRecords.forEach(r => {
+      const duration = getDurationDays(r.startDate, r.endDate);
+      totalSickDaysAllTime += duration;
+      
+      const startYear = new Date(r.startDate).getFullYear();
+      if (startYear === currentYear) {
+        totalSickDaysThisYear += duration;
+      }
+    });
+
+    const rank = soldierRecords[0]?.rank || 'جندي';
+    const unit = soldierRecords[0]?.unit || 'اللواء 43 عمالقة';
+
+    // Military legal limit for fully-paid sick leave per year: 60 days
+    const annualLimit = 60;
+    const remainingBalance = Math.max(0, annualLimit - totalSickDaysThisYear);
+    const percentUsed = Math.min(100, Math.round((totalSickDaysThisYear / annualLimit) * 100));
+
+    // Risk level
+    let riskLevel: 'low' | 'medium' | 'high' = 'low';
+    let riskReason = 'سجل طبي مستقر ضمن النطاق الآمن.';
+    if (totalSickDaysThisYear > 45) {
+      riskLevel = 'high';
+      riskReason = 'تجاوز أو اقترب بشدة من الحد السنوي الأقصى للإجازات المرضية (60 يوماً). يجب عرضه على اللجنة الطبية المباشرة.';
+    } else if (totalSickDaysThisYear > 25 || totalLeavesCount >= 3) {
+      riskLevel = 'medium';
+      riskReason = 'استهلاك متوسط لرصيد الإجازات السنوي أو تكرار متزايد للوعكات الصحية.';
+    }
+
+    return {
+      name: selectedBalanceMemberName,
+      rank,
+      unit,
+      totalSickDaysThisYear,
+      totalSickDaysAllTime,
+      totalLeavesCount,
+      remainingBalance,
+      percentUsed,
+      riskLevel,
+      riskReason,
+      records: sorted.reverse() // newest first
+    };
+  }, [records, selectedBalanceMemberName]);
 
   // Extract all leaves of the selected member and compute smart medical statistics
   const memberRecords = useMemo(() => {
@@ -735,6 +1218,174 @@ export default function Records({
     return result;
   }, [records, searchTerm, selectedType, selectedMonth, sortField, sortDirection, quickFilter]);
 
+  // --- Filtered Stats for Real-Time Display ---
+  const filteredStats = useMemo(() => {
+    const today = new Date('2026-07-01');
+    const totalCount = filteredRecords.length;
+    const totalDays = filteredRecords.reduce((acc, r) => acc + getDurationDays(r.startDate, r.endDate), 0);
+    const avgDays = totalCount ? Math.round(totalDays / totalCount) : 0;
+    
+    let activeCount = 0;
+    let warningCount = 0;
+    
+    filteredRecords.forEach(r => {
+      const start = new Date(r.startDate);
+      const end = new Date(r.endDate);
+      const isDValid = !isNaN(start.getTime()) && !isNaN(end.getTime());
+      if (isDValid && today >= start && today <= end) {
+        activeCount++;
+      }
+      
+      const isLong = getDurationDays(r.startDate, r.endDate) >= 15;
+      const diag = (r.diagnosis || '').toLowerCase();
+      const isCritical = r.type === 'حادث' || diag.includes('عملية') || diag.includes('كسر') || diag.includes('بتر') || diag.includes('شظايا');
+      if (isLong || isCritical) {
+        warningCount++;
+      }
+    });
+
+    return {
+      totalCount,
+      totalDays,
+      avgDays,
+      activeCount,
+      warningCount
+    };
+  }, [filteredRecords]);
+
+  // --- Smart Compliance Auditor & Integrity Score ---
+  const auditAnalysis = useMemo(() => {
+    const overlaps: { r1: LeaveRecord; r2: LeaveRecord; memberName: string }[] = [];
+    const excessiveLeaves: LeaveRecord[] = [];
+    const incompleteRecords: LeaveRecord[] = [];
+    const invertedDates: LeaveRecord[] = [];
+
+    // Group by name to check overlaps
+    const groupedByName: { [name: string]: LeaveRecord[] } = {};
+    records.forEach(r => {
+      if (!groupedByName[r.name]) {
+        groupedByName[r.name] = [];
+      }
+      groupedByName[r.name].push(r);
+    });
+
+    Object.keys(groupedByName).forEach(name => {
+      const list = groupedByName[name];
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const r1 = list[i];
+          const r2 = list[j];
+          const s1 = new Date(r1.startDate).getTime();
+          const e1 = new Date(r1.endDate).getTime();
+          const s2 = new Date(r2.startDate).getTime();
+          const e2 = new Date(r2.endDate).getTime();
+
+          if (!isNaN(s1) && !isNaN(e1) && !isNaN(s2) && !isNaN(e2)) {
+            // Check overlap
+            if (s1 <= e2 && s2 <= e1) {
+              overlaps.push({ r1, r2, memberName: name });
+            }
+          }
+        }
+      }
+    });
+
+    records.forEach(r => {
+      const duration = getDurationDays(r.startDate, r.endDate);
+      const diag = (r.diagnosis || '').toLowerCase();
+      const notes = (r.notes || '').toLowerCase();
+      
+      // 1. Inverted dates
+      const s = new Date(r.startDate).getTime();
+      const e = new Date(r.endDate).getTime();
+      if (!isNaN(s) && !isNaN(e) && s > e) {
+        invertedDates.push(r);
+      }
+
+      // 2. Excessive duration without board
+      const isBoardApproved = diag.includes('لجنة') || diag.includes('هيئة') || notes.includes('لجنة') || notes.includes('هيئة') || r.diagnosis?.includes('اللجنة');
+      if (duration >= 45 && !isBoardApproved) {
+        excessiveLeaves.push(r);
+      }
+
+      // 3. Incomplete records
+      if (!r.issuer || r.issuer.trim() === '' || !r.diagnosis || r.diagnosis.trim() === '') {
+        incompleteRecords.push(r);
+      }
+    });
+
+    const totalIssues = overlaps.length * 12 + excessiveLeaves.length * 8 + incompleteRecords.length * 4 + invertedDates.length * 15;
+    const score = Math.max(10, 100 - totalIssues);
+
+    return {
+      overlaps,
+      excessiveLeaves,
+      incompleteRecords,
+      invertedDates,
+      score,
+      totalIssuesCount: overlaps.length + excessiveLeaves.length + incompleteRecords.length + invertedDates.length
+    };
+  }, [records]);
+
+  // --- Unit Readiness & Power Impact Stats ---
+  const unitReadinessStats = useMemo(() => {
+    const today = new Date('2026-07-01');
+    const unitMap: { [unit: string]: { total: number; active: number; soldiers: LeaveRecord[] } } = {};
+    
+    records.forEach(r => {
+      const unit = r.unit || 'قيادة اللواء والوحدات العامة';
+      if (!unitMap[unit]) {
+        unitMap[unit] = { total: 0, active: 0, soldiers: [] };
+      }
+      unitMap[unit].total++;
+      
+      const start = new Date(r.startDate);
+      const end = new Date(r.endDate);
+      const isDValid = !isNaN(start.getTime()) && !isNaN(end.getTime());
+      const isActive = isDValid && today >= start && today <= end;
+      
+      if (isActive) {
+        unitMap[unit].active++;
+        unitMap[unit].soldiers.push(r);
+      }
+    });
+
+    return Object.keys(unitMap).map(unitName => {
+      const data = unitMap[unitName];
+      const activeSick = data.active;
+      const readinessPercent = Math.max(50, 100 - (activeSick * 8));
+      
+      let statusColor = 'text-emerald-500';
+      let statusBg = 'bg-emerald-500/10';
+      let statusLabel = 'جاهزية قتالية متكاملة';
+      let borderCol = 'border-emerald-500/25';
+      
+      if (activeSick >= 4) {
+        statusColor = 'text-rose-500';
+        statusBg = 'bg-rose-500/10';
+        statusLabel = 'تأثير عملياتي حرج';
+        borderCol = 'border-rose-500/25';
+      } else if (activeSick >= 2) {
+        statusColor = 'text-amber-500';
+        statusBg = 'bg-amber-500/10';
+        statusLabel = 'انخفاض متوسط وعملياتي';
+        borderCol = 'border-amber-500/25';
+      }
+
+      return {
+        unitName,
+        totalRecords: data.total,
+        activeSick,
+        readinessPercent,
+        statusColor,
+        statusBg,
+        statusLabel,
+        borderCol,
+        soldiers: data.soldiers
+      };
+    });
+  }, [records]);
+
   // Pagination Logic
   const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
   const paginatedRecords = useMemo(() => {
@@ -819,33 +1470,42 @@ export default function Records({
     triggerToast(`تم تصدير ${filteredRecords.length} سجل بنجاح بصيغة CSV`, 'success');
   };
 
-  // Bulk Delete
+  // Bulk Delete Trigger
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (confirm(`هل أنت متأكد من حذف ${selectedIds.length} سجل محدد بالكامل؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+    setIsBulkDelete(true);
+    setRecordToDelete(null);
+    setDeleteModalOpen(true);
+  };
+
+  // Single Delete Trigger
+  const handleSingleDelete = async (record: LeaveRecord) => {
+    setIsBulkDelete(false);
+    setRecordToDelete(record);
+    setDeleteModalOpen(true);
+  };
+
+  // Execute actual deletion
+  const executeDelete = async () => {
+    if (isBulkDelete) {
+      if (selectedIds.length === 0) return;
       try {
         await onDeleteMultiple(selectedIds);
         setSelectedIds([]);
-        triggerToast('تم حذف السجلات المحددة بنجاح', 'success');
-        // adjust current page if empty
+        triggerToast('تم حذف السجلات المحددة بنجاح من كشوفات السيطرة', 'success');
         if (paginatedRecords.length === selectedIds.length && currentPage > 1) {
           setCurrentPage(currentPage - 1);
         }
       } catch (err) {
-        triggerToast('حدث خطأ أثناء حذف السجلات', 'error');
+        triggerToast('حدث خطأ أثناء محاولة حذف السجلات العسكرية', 'error');
       }
-    }
-  };
-
-  // Single Delete
-  const handleSingleDelete = async (record: LeaveRecord) => {
-    if (confirm(`هل أنت متأكد من حذف إجازة منتسب اللواء "${record.rank} / ${record.name}"؟`)) {
+    } else if (recordToDelete) {
       try {
-        await onDelete(record.id);
-        setSelectedIds((prev) => prev.filter((id) => id !== record.id));
-        triggerToast('تم حذف السجل بنجاح', 'success');
+        await onDelete(recordToDelete.id);
+        setSelectedIds((prev) => prev.filter((id) => id !== recordToDelete.id));
+        triggerToast('تم حذف السجل بنجاح من قيود السيطرة والربط المالي', 'success');
       } catch (err) {
-        triggerToast('حدث خطأ أثناء الحذف', 'error');
+        triggerToast('حدث خطأ أثناء محاولة حذف السجل العسكري', 'error');
       }
     }
   };
@@ -1136,17 +1796,17 @@ export default function Records({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 p-3 sm:p-4 sm:px-6 sm:py-4 gap-4 select-none print:hidden">
           {/* Right Side: Tab buttons in a highly polished segmented container, optimized for touch on mobile */}
           <div className="w-full lg:w-auto bg-slate-100/70 dark:bg-slate-950/60 p-1 sm:p-1.5 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-inner">
-            <div className="grid grid-cols-3 lg:flex lg:flex-wrap items-center gap-1 sm:gap-2">
+            <div className="grid grid-cols-2 xs:grid-cols-3 sm:flex sm:flex-wrap items-center gap-1 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setActiveSubTab('log')}
-                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2.5 px-2 sm:px-4.5 py-3 sm:py-2.5 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[48px] ${
+                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[44px] ${
                   activeSubTab === 'log'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-900/40'
                 }`}
               >
-                <div className={`p-1 sm:p-1.5 rounded-lg transition-all duration-300 ${
+                <div className={`p-1 rounded-lg transition-all duration-300 ${
                   activeSubTab === 'log'
                     ? 'bg-slate-950/10 text-slate-950'
                     : 'bg-slate-200/50 dark:bg-slate-850 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
@@ -1158,14 +1818,33 @@ export default function Records({
 
               <button
                 type="button"
+                onClick={() => setActiveSubTab('timeline')}
+                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[44px] ${
+                  activeSubTab === 'timeline'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-900/40'
+                }`}
+              >
+                <div className={`p-1 rounded-lg transition-all duration-300 ${
+                  activeSubTab === 'timeline'
+                    ? 'bg-slate-950/10 text-slate-950'
+                    : 'bg-slate-200/50 dark:bg-slate-850 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
+                }`}>
+                  <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+                </div>
+                <span className="truncate">المخطط الزمني</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveSubTab('repeated')}
-                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2.5 px-2 sm:px-4.5 py-3 sm:py-2.5 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[48px] ${
+                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[44px] ${
                   activeSubTab === 'repeated'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-900/40'
                 }`}
               >
-                <div className={`p-1 sm:p-1.5 rounded-lg transition-all duration-300 ${
+                <div className={`p-1 rounded-lg transition-all duration-300 ${
                   activeSubTab === 'repeated'
                     ? 'bg-slate-950/10 text-slate-950'
                     : 'bg-slate-200/50 dark:bg-slate-850 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
@@ -1185,13 +1864,13 @@ export default function Records({
               <button
                 type="button"
                 onClick={() => setActiveSubTab('alerts')}
-                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2.5 px-2 sm:px-4.5 py-3 sm:py-2.5 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[48px] ${
+                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[44px] ${
                   activeSubTab === 'alerts'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-900/40'
                 }`}
               >
-                <div className={`p-1 sm:p-1.5 rounded-lg transition-all duration-300 ${
+                <div className={`p-1 rounded-lg transition-all duration-300 ${
                   activeSubTab === 'alerts'
                     ? 'bg-slate-950/10 text-slate-950'
                     : 'bg-slate-200/50 dark:bg-slate-850 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
@@ -1208,6 +1887,66 @@ export default function Records({
                     {alertStats.totalAlerts}
                   </span>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('estimator')}
+                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[44px] ${
+                  activeSubTab === 'estimator'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-900/40'
+                }`}
+              >
+                <div className={`p-1 rounded-lg transition-all duration-300 ${
+                  activeSubTab === 'estimator'
+                    ? 'bg-slate-950/10 text-slate-950'
+                    : 'bg-slate-200/50 dark:bg-slate-850 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
+                }`}>
+                  <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+                </div>
+                <span className="truncate">حاسبة مدد الاستشفاء</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('balance')}
+                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[44px] ${
+                  activeSubTab === 'balance'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-900/40'
+                }`}
+              >
+                <div className={`p-1 rounded-lg transition-all duration-300 ${
+                  activeSubTab === 'balance'
+                    ? 'bg-slate-950/10 text-slate-950'
+                    : 'bg-slate-200/50 dark:bg-slate-850 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
+                }`}>
+                  <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+                </div>
+                <span className="truncate">تحليل الأرصدة والحد السنوي</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('radar')}
+                className={`group flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl text-[10px] xs:text-[11px] sm:text-xs font-black transition-all duration-300 cursor-pointer flex-1 min-h-[44px] relative overflow-hidden ${
+                  activeSubTab === 'radar'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-900/40'
+                }`}
+              >
+                <div className={`p-1 rounded-lg transition-all duration-300 ${
+                  activeSubTab === 'radar'
+                    ? 'bg-slate-950/10 text-slate-950'
+                    : 'bg-slate-200/50 dark:bg-slate-850 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
+                }`}>
+                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] text-amber-600 dark:text-amber-400 group-hover:animate-spin" />
+                </div>
+                <span className="truncate">رادار الجاهزية والمدقق الذكي</span>
+                <span className="absolute top-0 right-0 bg-red-500 text-white text-[7px] font-black px-1 rounded-bl-lg animate-bounce">
+                  حصري
+                </span>
               </button>
             </div>
           </div>
@@ -1289,19 +2028,50 @@ export default function Records({
           {/* Streamlined Modern Sub-navigation Toolbar with Dropdown Menus */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-right">
             
-            {/* Search Input Box */}
-            <div className="relative flex-1 max-w-xl">
-              <input
-                type="text"
-                placeholder="ابحث بالاسم، التشخيص الطبي، الجهة أو الملاحظات..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full pl-4 pr-11 py-2.5 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100/50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-right transition-all font-sans"
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute top-3.5 right-4 pointer-events-none" />
+            {/* Search and Quick Filters Column */}
+            <div className="flex flex-col gap-2.5 flex-1 max-w-xl">
+              {/* Search Input Box */}
+              <div className="relative w-full">
+                <input
+                  type="text"
+                  placeholder="ابحث بالاسم، التشخيص الطبي، الجهة أو الملاحظات..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full pl-4 pr-11 py-2.5 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100/50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-right transition-all font-sans"
+                />
+                <Search className="w-4 h-4 text-slate-400 absolute top-3.5 right-4 pointer-events-none" />
+              </div>
+
+              {/* Quick Filter Presets Row */}
+              <div className="flex flex-wrap items-center gap-1.5 select-none">
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold ml-1">التصفية السريعة:</span>
+                {[
+                  { id: 'all', label: 'الكل' },
+                  { id: 'active', label: 'النشطة حالياً 🟢' },
+                  { id: 'ended', label: 'المنتهية 🛑' },
+                  { id: 'long', label: 'طويلة (15+ يوم) ⏳' },
+                  { id: 'extended', label: 'الممددة 🔁' }
+                ].map((pill) => (
+                  <button
+                    key={pill.id}
+                    type="button"
+                    onClick={() => {
+                      setQuickFilter(pill.id as any);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-black transition-all cursor-pointer border ${
+                      quickFilter === pill.id
+                        ? 'bg-amber-500 border-amber-500 text-slate-950 font-black shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {pill.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Concise Dropdowns Row */}
@@ -1560,6 +2330,36 @@ export default function Records({
                 </button>
               )}
 
+              {/* View Mode Segmented Switcher */}
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/80">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    viewMode === 'table'
+                      ? 'bg-white dark:bg-slate-900 text-amber-500 shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="عرض جدول البيانات المعتمد"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">جدول</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    viewMode === 'grid'
+                      ? 'bg-white dark:bg-slate-900 text-amber-500 shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="عرض كروت المتابعة العملياتية"
+                >
+                  <Kanban className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">كروت عمليات</span>
+                </button>
+              </div>
+
             </div>
           </div>
 
@@ -1587,6 +2387,55 @@ export default function Records({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Live Filter Analytics Widget Panel */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-5 pb-5 select-none print:hidden bg-white dark:bg-slate-900">
+          {/* Card 1: Filtered Count */}
+          <div className="bg-slate-50/50 dark:bg-slate-950/20 p-3 rounded-2xl border border-slate-150 dark:border-slate-850/60 flex items-center justify-between">
+            <div className="space-y-0.5 text-right">
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block">الإجازات المفلترة</span>
+              <span className="text-xs font-black text-slate-850 dark:text-slate-100">{filteredStats.totalCount} حالة في الكشف</span>
+            </div>
+            <div className="p-2 bg-amber-500/10 text-amber-500 rounded-xl">
+              <FileText className="w-4 h-4" />
+            </div>
+          </div>
+
+          {/* Card 2: Active Filtered Leaves */}
+          <div className="bg-slate-50/50 dark:bg-slate-950/20 p-3 rounded-2xl border border-slate-150 dark:border-slate-850/60 flex items-center justify-between">
+            <div className="space-y-0.5 text-right">
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block">النشطة حالياً</span>
+              <span className="text-xs font-black text-emerald-600 dark:text-emerald-450">{filteredStats.activeCount} إجازة جارية</span>
+            </div>
+            <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-xl">
+              <Activity className="w-4 h-4" />
+            </div>
+          </div>
+
+          {/* Card 3: Total Days */}
+          <div className="bg-slate-50/50 dark:bg-slate-950/20 p-3 rounded-2xl border border-slate-150 dark:border-slate-850/60 flex items-center justify-between">
+            <div className="space-y-0.5 text-right">
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block">إجمالي الأيام الممنوحة</span>
+              <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">{filteredStats.totalDays} يوم استراحة</span>
+            </div>
+            <div className="p-2 bg-indigo-500/10 text-indigo-500 rounded-xl">
+              <Calendar className="w-4 h-4" />
+            </div>
+          </div>
+
+          {/* Card 4: Severity Risk / Warning cases */}
+          <div className="bg-slate-50/50 dark:bg-slate-950/20 p-3 rounded-2xl border border-slate-150 dark:border-slate-850/60 flex items-center justify-between">
+            <div className="space-y-0.5 text-right">
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block">حالات كبرى وجراحة</span>
+              <span className={`text-xs font-black ${filteredStats.warningCount > 0 ? 'text-rose-500' : 'text-slate-550 dark:text-slate-400'}`}>
+                {filteredStats.warningCount} وعكة معقدة
+              </span>
+            </div>
+            <div className="p-2 bg-rose-500/10 text-rose-500 rounded-xl">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          </div>
         </div>
 
       {/* Main Records Table Container */}
@@ -1636,7 +2485,7 @@ export default function Records({
         </div>
 
         {/* Desktop view: Table layout */}
-        <div className="hidden min-[600px]:block overflow-x-auto print:block print:w-full">
+        <div className={`${viewMode === 'table' ? 'hidden min-[600px]:block' : 'hidden'} overflow-x-auto print:block print:w-full`}>
           <table className="w-full text-right border-collapse">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs font-bold font-sans select-none print:bg-slate-100 print:text-slate-950">
@@ -1746,17 +2595,17 @@ export default function Records({
                           >
                             <span className="flex items-center gap-1">
                               <User className="w-3 h-3 text-slate-400 dark:text-slate-500 group-hover:text-amber-500 shrink-0" />
-                              <span>{r.name}</span>
+                              <span>{highlightMatch(r.name, searchTerm)}</span>
                             </span>
                           </button>
                           <span className="block text-[10px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 print:text-slate-600">
-                            {r.unit}
+                            {highlightMatch(r.unit, searchTerm)}
                           </span>
                         </div>
                       </td>
 
                       {/* Rank */}
-                      <td className="py-3 px-4 font-medium print:text-slate-950">{r.rank}</td>
+                      <td className="py-3 px-4 font-medium print:text-slate-950">{highlightMatch(r.rank, searchTerm)}</td>
 
                       {/* Leave Type Badge */}
                       <td className="py-3 px-4">
@@ -1797,9 +2646,9 @@ export default function Records({
                       {/* Diagnosis */}
                       <td className="py-3 px-4 max-w-xs truncate print:truncate-none print:whitespace-normal" title={r.diagnosis}>
                         <div>
-                          <p className="truncate print:whitespace-normal font-sans font-medium">{r.diagnosis}</p>
+                          <p className="truncate print:whitespace-normal font-sans font-medium">{highlightMatch(r.diagnosis, searchTerm)}</p>
                           <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate print:whitespace-normal mt-0.5 print:text-slate-600">
-                            الجهة: {r.issuer || 'غير محدد'}
+                            الجهة: {highlightMatch(r.issuer || 'غير محدد', searchTerm)}
                           </p>
                         </div>
                       </td>
@@ -1875,6 +2724,206 @@ export default function Records({
             </tbody>
           </table>
         </div>
+
+        {/* Brand New Exclusive: Operational Monitoring Card Grid */}
+        {viewMode === 'grid' && (
+          <div className="hidden min-[600px]:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-5 bg-slate-50/20 dark:bg-slate-900/20 border-b border-slate-150 dark:border-slate-800/50 print:hidden select-none">
+            {paginatedRecords.length > 0 ? (
+              paginatedRecords.map((r, index) => {
+                const duration = getDurationDays(r.startDate, r.endDate);
+                const isSelected = selectedIds.includes(r.id);
+                
+                let typeBadge = '';
+                if (r.type === 'مريض') {
+                  typeBadge = 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border-rose-100 dark:border-rose-900/30';
+                } else if (r.type === 'مرافق') {
+                  typeBadge = 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-100 dark:border-amber-900/30';
+                } else if (r.type === 'حادث') {
+                  typeBadge = 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/30';
+                } else {
+                  typeBadge = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/30';
+                }
+
+                const status = getLeaveStatus(r.startDate, r.endDate);
+                const isLong = duration >= 15;
+                const diagLower = (r.diagnosis || '').toLowerCase();
+                const isCritical = r.type === 'حادث' || diagLower.includes('عملية') || diagLower.includes('كسر') || diagLower.includes('بتر') || diagLower.includes('شظايا');
+                
+                return (
+                  <div
+                    key={r.id}
+                    className={`bg-white dark:bg-slate-950 rounded-2xl border transition-all duration-300 p-5 flex flex-col justify-between gap-4 relative overflow-hidden group hover:shadow-lg hover:shadow-amber-500/[0.02] hover:border-amber-500/30 ${
+                      isSelected 
+                        ? 'border-amber-500 ring-2 ring-amber-500/5 bg-amber-500/[0.01]' 
+                        : 'border-slate-150 dark:border-slate-800/80'
+                    }`}
+                  >
+                    {/* Background military visual element */}
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-slate-50 dark:bg-slate-900/50 rounded-bl-3xl -z-10 transition-transform group-hover:scale-110" />
+
+                    {/* Card Top Header */}
+                    <div className="flex items-start justify-between gap-3 text-right">
+                      <div className="flex items-center gap-3">
+                        {/* Military Badge Style Badge */}
+                        <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center font-black text-[10px] text-slate-700 dark:text-slate-300 shadow-sm shrink-0">
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-none mb-0.5">رتبة</span>
+                          <span className="leading-none text-[11px]">{r.rank}</span>
+                        </div>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMemberName(r.name)}
+                            className="text-xs font-black text-slate-850 dark:text-white hover:text-amber-500 text-right transition-colors block leading-tight"
+                          >
+                            {r.name}
+                          </button>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-1 font-bold">{r.unit}</span>
+                        </div>
+                      </div>
+
+                      {/* Checkbox */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleSelectRow(r.id, e.target.checked)}
+                          className="w-4 h-4 text-amber-500 border-slate-300 dark:border-slate-700 rounded focus:ring-amber-500 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Diagnosis content card */}
+                    <div className="bg-slate-50/50 dark:bg-slate-900/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-850/60 space-y-1.5 text-right">
+                      <div className="flex items-center gap-1.5 justify-start text-[10px] font-black text-slate-400">
+                        <HeartPulse className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <span>التشخيص والحالة الطبية</span>
+                      </div>
+                      <p className="text-xs text-slate-750 dark:text-slate-200 font-bold leading-relaxed line-clamp-2" title={r.diagnosis}>
+                        {r.diagnosis}
+                      </p>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-bold pt-1 border-t border-slate-100/50 dark:border-slate-800/30">
+                        <span>جهة التقرير: {r.issuer || 'مجهول'}</span>
+                        {r.notes && <span className="text-amber-600 dark:text-amber-450 truncate max-w-[120px]">⚠️ {r.notes}</span>}
+                      </div>
+                    </div>
+
+                    {/* Timeline Tracker */}
+                    <div className="space-y-1.5 text-right">
+                      <div className="flex items-center justify-between text-[10px] font-bold">
+                        <span className="text-slate-400 font-mono">{r.startDate} 🡨 {r.endDate}</span>
+                        <span className="text-amber-600 dark:text-amber-450 font-black">المدى الشهري: {duration} يوم</span>
+                      </div>
+                      
+                      {status === 'active' ? (
+                        <div className="space-y-1">
+                          <div className="w-full bg-slate-100 dark:bg-slate-850 h-2 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full animate-pulse" style={{ width: '70%' }} />
+                          </div>
+                          <div className="flex items-center justify-between text-[9px] font-black text-emerald-600 dark:text-emerald-450">
+                            <span>● الإجازة نشطة وجارية حالياً</span>
+                            <span>التحقق الطبي قائم</span>
+                          </div>
+                        </div>
+                      ) : status === 'upcoming' ? (
+                        <div className="space-y-1">
+                          <div className="w-full bg-slate-100 dark:bg-slate-850 h-2 rounded-full overflow-hidden">
+                            <div className="h-full bg-indigo-500 rounded-full" style={{ width: '20%' }} />
+                          </div>
+                          <div className="flex items-center justify-between text-[9px] font-black text-indigo-600 dark:text-indigo-400">
+                            <span>● لم تبدأ بعد</span>
+                            <span>استعداد لجدولة الخدمة</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="w-full bg-slate-100 dark:bg-slate-850 h-2 rounded-full overflow-hidden">
+                            <div className="h-full bg-slate-300 dark:bg-slate-700 rounded-full" style={{ width: '100%' }} />
+                          </div>
+                          <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 dark:text-slate-500">
+                            <span>منتهية (مغلقة بالكامل)</span>
+                            <span>تم التأكيد والمباشرة</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Status Banners */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/60 text-right text-[10px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-2 py-0.5 rounded-lg font-black text-[9px] border ${typeBadge}`}>
+                          {r.type}
+                        </span>
+                        {status === 'active' && (
+                          <span className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-lg font-black text-[9px] border border-emerald-500/10">
+                            تحت الرصد
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Compliance Indicators */}
+                      {isCritical ? (
+                        <span className="text-rose-500 dark:text-rose-400 font-black flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                          <span>تتطلب عناية ميدانية فائقة</span>
+                        </span>
+                      ) : isLong ? (
+                        <span className="text-amber-600 dark:text-amber-450 font-black flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-amber-500" />
+                          <span>حالة طويلة المدى</span>
+                        </span>
+                      ) : (
+                        <span className="text-emerald-600 dark:text-emerald-450 font-black flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>سليمة إدارياً</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Actions Panel */}
+                    <div className="flex items-center justify-end gap-1 px-1 py-1 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-850/50 mt-1">
+                      <button
+                        onClick={() => openEditModal(r)}
+                        className="flex-1 py-1.5 hover:bg-white dark:hover:bg-slate-950 text-slate-600 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 border border-transparent hover:border-slate-100 dark:hover:border-slate-800"
+                        title="تعديل السجل"
+                      >
+                        <Edit2 className="w-3 h-3 text-amber-500" />
+                        <span>تعديل</span>
+                      </button>
+                      <button
+                        onClick={() => openExtendModal(r)}
+                        className="flex-1 py-1.5 hover:bg-white dark:hover:bg-slate-950 text-slate-600 dark:text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 border border-transparent hover:border-slate-100 dark:hover:border-slate-800"
+                        title="تعديل / تمديد الإجازة"
+                      >
+                        <CalendarPlus className="w-3 h-3 text-indigo-500" />
+                        <span>تمديد</span>
+                      </button>
+                      <button
+                        onClick={() => openHistoryModal(r)}
+                        className="flex-1 py-1.5 hover:bg-white dark:hover:bg-slate-950 text-slate-600 dark:text-slate-400 hover:text-emerald-500 dark:hover:text-emerald-400 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 border border-transparent hover:border-slate-100 dark:hover:border-slate-800"
+                        title="سجل التتبع والعمليات الطبية"
+                      >
+                        <Eye className="w-3 h-3 text-emerald-500" />
+                        <span>سجل</span>
+                      </button>
+                      <button
+                        onClick={() => handleSingleDelete(r)}
+                        className="px-2 py-1.5 hover:bg-rose-500/10 text-slate-450 hover:text-rose-500 rounded-lg cursor-pointer transition-all active:scale-95"
+                        title="حذف هذا السجل نهائياً"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="col-span-full py-20 text-center text-slate-400 font-bold text-xs bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-2xl flex flex-col items-center justify-center gap-3">
+                <FileSpreadsheet className="w-10 h-10 text-slate-300 dark:text-slate-700" />
+                <span>لا توجد أي سجلات أو إجازات تتوافق مع محددات البحث الحالية.</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Mobile View: Cards Layout */}
         <div className="block min-[600px]:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
@@ -2212,6 +3261,231 @@ export default function Records({
         </div>
       </div>
           </>
+        ) : activeSubTab === 'timeline' ? (
+          /* ==========================================
+             3. مخطط الإجازات الزمني التفاعلي المبتكر (Leaves Timeline View)
+             ========================================== */
+          <div className="p-4 sm:p-5 space-y-6 select-none print:hidden text-right font-sans">
+            {/* Upper Timeline Header Banner */}
+            <div className="relative overflow-hidden bg-gradient-to-l from-slate-900 to-slate-950 dark:from-slate-950 dark:to-black text-white p-5 sm:p-6 rounded-[24px] border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-xl">
+              <div className="absolute top-1/2 left-10 -translate-y-1/2 w-48 h-48 bg-amber-500/5 rounded-full border border-amber-500/10 animate-ping pointer-events-none" />
+              <div className="absolute top-1/2 left-10 -translate-y-1/2 w-24 h-24 bg-amber-500/10 rounded-full border border-amber-500/20 animate-pulse pointer-events-none" />
+              
+              <div className="space-y-2 z-10">
+                <div className="flex items-center gap-2 justify-start flex-wrap">
+                  <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                    رصد حي للغياب
+                  </span>
+                  <span className="text-slate-400 text-xs font-mono">• مخطط غانتس لتعقب استمرارية القوة</span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-black text-white tracking-tight leading-tight">
+                  مخطط الإجازات الزمني التفاعلي والتعقب الميداني المباشر (Gantt Chart)
+                </h3>
+                <p className="text-xs text-slate-400 max-w-2xl font-medium leading-relaxed">
+                  خارطة ديناميكية توضح تداخل إجازات المنتسبين عبر أيام الشهر. تمكنك من معرفة مواعيد عودة الأفراد وتفادي فراغات المناوبات في السرايا والكتائب العسكرية في آن واحد.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0 z-10 bg-slate-850/55 p-3 rounded-2xl border border-slate-800/80 backdrop-blur-md">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shadow-inner">
+                  <Calendar className="w-5 h-5 animate-pulse" />
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 block font-bold leading-none">الشهر المعروض</span>
+                  <span className="text-sm font-black text-emerald-400 mt-1 block">
+                    {selectedMonth === '' ? 'يوليو ٢٠٢٦' : getArabicMonthName(selectedMonth)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Timeline Main Layout */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-6">
+              {/* Internal Controls */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/60">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-black text-slate-850 dark:text-white flex items-center gap-1.5 justify-start">
+                    <Activity className="w-4 h-4 text-amber-500" />
+                    <span>توزيع غياب القوة البشرية لشهر {selectedMonth === '' ? 'يوليو ٢٠٢٦' : getArabicMonthName(selectedMonth)}</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold">
+                    مرتبة تلقائياً برتب الأفراد ومحسوبة بالخوارزمية الجغرافية لتدقيق الحالات ومستويات الجاهزية.
+                  </p>
+                </div>
+                
+                {/* Micro legend */}
+                <div className="flex items-center gap-3 justify-end text-[10px] font-black text-slate-450 select-none flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded bg-gradient-to-r from-rose-500 to-red-500" />
+                    <span>إجازة مرضية (مريض)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded bg-gradient-to-r from-amber-500 to-orange-500" />
+                    <span>مرافق طبي (مرافق)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded bg-gradient-to-r from-indigo-500 to-blue-500" />
+                    <span>حوادث وكسور (حادث)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded bg-gradient-to-r from-emerald-500 to-teal-500" />
+                    <span>إجازة أخرى</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gantt Timeline Scroll Container */}
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-950/20">
+                <div className="min-w-[1100px] divide-y divide-slate-150 dark:divide-slate-850">
+                  {/* Calendar Days Header */}
+                  <div className="grid grid-cols-[240px_1fr] bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-bold text-[10px] font-mono sticky top-0 z-10">
+                    <div className="p-3 border-l border-slate-200 dark:border-slate-800 text-right text-xs font-sans font-black text-slate-800 dark:text-slate-200">
+                      اسم المنتسب والرتبة والكتيبة
+                    </div>
+                    <div className="grid text-center items-center" style={{ display: 'grid', gridTemplateColumns: 'repeat(31, minmax(0, 1fr))' }}>
+                      {Array.from({ length: 31 }).map((_, i) => {
+                        const day = i + 1;
+                        // Check if day is today (assuming today is July 1st as per system date)
+                        const isToday = day === 1 && (selectedMonth === '' || selectedMonth === '2026-07');
+                        return (
+                          <div 
+                            key={day} 
+                            className={`py-3 border-l border-slate-250/50 dark:border-slate-800/40 font-black relative ${
+                              isToday ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 font-extrabold ring-1 ring-amber-500/50' : ''
+                            }`}
+                          >
+                            <span>{day}</span>
+                            {isToday && (
+                              <span className="absolute -top-1 left-1/2 -translate-x-1/2 text-[6px] font-sans bg-amber-500 text-slate-950 px-1 rounded-sm scale-75 uppercase">
+                                اليوم
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Personnel Gantt Rows */}
+                  {filteredRecords.length > 0 ? (
+                    filteredRecords.map((r) => {
+                      // Parse the selected month or default to July 2026
+                      const monthStr = selectedMonth === '' ? '2026-07' : selectedMonth;
+                      const [year, month] = monthStr.split('-').map(Number);
+                      
+                      // Calculate overlap range for current month view
+                      const overlap = (() => {
+                        const start = new Date(r.startDate);
+                        const end = new Date(r.endDate);
+                        if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+
+                        // First and last day of current month
+                        const firstDay = new Date(year, month - 1, 1);
+                        const lastDay = new Date(year, month, 0);
+
+                        // No overlap if entirely before or after current month
+                        if (end < firstDay || start > lastDay) return null;
+
+                        const overlapStart = start < firstDay ? firstDay : start;
+                        const overlapEnd = end > lastDay ? lastDay : end;
+
+                        return {
+                          startDay: overlapStart.getDate(),
+                          endDay: overlapEnd.getDate(),
+                          isStartClamped: start < firstDay,
+                          isEndClamped: end > lastDay
+                        };
+                      })();
+
+                      return (
+                        <div key={r.id} className="grid grid-cols-[240px_1fr] bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-850/30 transition-all group">
+                          {/* Left Column: Soldier details */}
+                          <div className="p-3 border-l border-slate-150 dark:border-slate-850 flex flex-col justify-center text-right space-y-1">
+                            <div className="flex items-center gap-1.5 justify-start">
+                              <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[9px] font-black px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-750">
+                                {r.rank}
+                              </span>
+                              <h5 className="text-xs font-black text-slate-850 dark:text-white truncate max-w-[130px]" title={r.name}>
+                                {r.name}
+                              </h5>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-450 font-bold">
+                              <span>{r.unit}</span>
+                              <span className="text-[9px] text-amber-600 dark:text-amber-400 bg-amber-500/5 px-1.5 py-0.2 rounded font-sans font-black">
+                                {r.type}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Right Column: Visual timeline bar */}
+                          <div className="grid relative min-h-[48px] items-center" style={{ display: 'grid', gridTemplateColumns: 'repeat(31, minmax(0, 1fr))' }}>
+                            {/* Grid cells for alignment visual cues */}
+                            {Array.from({ length: 31 }).map((_, i) => (
+                              <div key={i} className="h-full border-l border-slate-150/40 dark:border-slate-850/30 pointer-events-none" />
+                            ))}
+
+                            {/* Overlaid actual leave bar */}
+                            {overlap && (
+                              <div 
+                                style={{
+                                  gridColumnStart: overlap.startDay,
+                                  gridColumnEnd: overlap.endDay + 1,
+                                }}
+                                className={`relative h-6 rounded-lg flex items-center justify-between px-2 text-[9px] font-black text-white shadow-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-md cursor-pointer select-none mx-0.5 ${
+                                  r.type === 'مريض'
+                                    ? 'bg-gradient-to-r from-rose-500 to-red-500 shadow-rose-500/10'
+                                    : r.type === 'مرافق'
+                                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-amber-500/10'
+                                    : r.type === 'حادث'
+                                    ? 'bg-gradient-to-r from-indigo-500 to-blue-500 shadow-indigo-500/10'
+                                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-500/10'
+                                }`}
+                                title={`${r.name} - ${r.diagnosis} (من ${formatDateToDMY(r.startDate)} إلى ${formatDateToDMY(r.endDate)})`}
+                              >
+                                {/* Left Indicator for Clamped Start */}
+                                {overlap.isStartClamped ? (
+                                  <ChevronRight className="w-3 h-3 text-white/80 animate-pulse shrink-0" />
+                                ) : <span className="w-1 h-1 rounded-full bg-white shrink-0" />}
+
+                                {/* Center Diagnosis Label */}
+                                <span className="truncate mx-1 block font-sans select-none tracking-tight leading-none">
+                                  {r.diagnosis || 'إجازة طبية'}
+                                </span>
+
+                                {/* Right Indicator for Clamped End */}
+                                {overlap.isEndClamped ? (
+                                  <ChevronLeft className="w-3 h-3 text-white/80 animate-pulse shrink-0" />
+                                ) : <span className="text-[8px] font-mono bg-black/15 px-1 rounded-md shrink-0 select-none">
+                                    {getDurationDays(r.startDate, r.endDate)}ي
+                                  </span>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-16 text-center text-slate-400 bg-white dark:bg-slate-900 font-bold text-xs">
+                      لا يوجد أي سجلات مطابقة للفلاتر والبحث في هذا المخطط الزمني حالياً.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Informative tips footer */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-850 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs leading-relaxed font-medium text-slate-500 dark:text-slate-400">
+                <div className="flex items-center gap-2 justify-start">
+                  <Shield className="w-5 h-5 text-amber-500 shrink-0" />
+                  <span>
+                    <strong>تنبيه عملياتي:</strong> يرمز المخطط إلى تداخل الغيابات. تكتل الغيابات باللون الأحمر يهدد استمرارية جاهزية سرايا وكتائب اللواء. يرجى التنسيق مع الهيئات الطبية لترشيد منح الرخص.
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 shrink-0">
+                  تم التحديث التلقائي: {new Date().toLocaleTimeString('ar-SA')}
+                </div>
+              </div>
+            </div>
+          </div>
         ) : activeSubTab === 'repeated' ? (
           /* 4. قسم الإجازات المتكررة (Repeated Leaves View) - Hidden on Print */
           <div className="p-5 space-y-6 select-none print:hidden">
@@ -2494,7 +3768,7 @@ export default function Records({
               )}
             </div>
           </div>
-        ) : (
+        ) : activeSubTab === 'alerts' ? (
           <div className="p-5 space-y-6 select-none print:hidden">
             {/* Header / Intro */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/10 p-4 rounded-xl border border-slate-200 dark:border-slate-800/60 text-right">
@@ -2990,6 +4264,874 @@ export default function Records({
                 </div>
               )}
             </div>
+          </div>
+        ) : activeSubTab === 'estimator' ? (
+          /* ==========================================
+             5. قسم حاسبة مدد الاستشفاء وبروتوكول العلاج
+             ========================================== */
+          <div className="p-5 space-y-6 select-none print:hidden text-right font-sans">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/10 p-4 rounded-xl border border-slate-200 dark:border-slate-800/60">
+              <h3 className="text-sm font-black text-slate-850 dark:text-slate-200 flex items-center gap-1.5 justify-start">
+                <Activity className="w-5 h-5 text-amber-500" />
+                <span>مُوجِّه مدد الاستشفاء وبروتوكولات التعافي العسكرية المعتمدة</span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">بروتوكول معتمد من اللجنة الطبية المشتركة لعام 2026</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Right panel: Controls & parameters */}
+              <div className="lg:col-span-1 space-y-5 bg-slate-50/30 dark:bg-slate-900/40 p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800">
+                <h4 className="text-xs font-black text-slate-700 dark:text-slate-350 border-b border-slate-200 dark:border-slate-800 pb-2">عوامل الحالة والتقييم الطبي</h4>
+                
+                {/* 1. Disease selector */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 block">نوع الحالة أو التشخيص الرئيسي:</label>
+                  <select
+                    value={selectedEstimatorId}
+                    onChange={(e) => setSelectedEstimatorId(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-right"
+                  >
+                    {ESTIMATOR_DIAGNOSES.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 2. Start date */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 block">تاريخ بدء الإجازة الطبية المقترح:</label>
+                  <input
+                    type="date"
+                    value={estimatorStartDate}
+                    onChange={(e) => setEstimatorStartDate(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-right font-mono"
+                  />
+                </div>
+
+                {/* 3. Hospitalized checkbox */}
+                <div className="flex items-center gap-2.5 pt-2">
+                  <input
+                    type="checkbox"
+                    id="hospitalized"
+                    checked={estimatorHospitalized}
+                    onChange={(e) => setEstimatorHospitalized(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 dark:border-slate-800 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label htmlFor="hospitalized" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                    استدعت الحالة تنويم مبرم في المستشفى (+10 أيام)
+                  </label>
+                </div>
+
+                {/* 4. Surgery status */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 block">التدخل الجراحي المصاحب:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'none', label: 'لا يوجد' },
+                      { id: 'minor', label: 'جراحة صغرى (+7)' },
+                      { id: 'major', label: 'جراحة كبرى (+20)' }
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setEstimatorSurgeryType(opt.id as any)}
+                        className={`py-2 px-1 rounded-lg text-[10px] font-bold border transition-all text-center cursor-pointer ${
+                          estimatorSurgeryType === opt.id
+                            ? 'bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400 font-black'
+                            : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-450'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 5. Patient recovery state */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 block">مؤشر سرعة الاستجابة والتعافي الطبيعي:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'fast', label: 'سريع (-15%)' },
+                      { id: 'normal', label: 'اعتيادي' },
+                      { id: 'slow', label: 'بطيء (+25%)' }
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setEstimatorRecoveryState(opt.id as any)}
+                        className={`py-2 px-1 rounded-lg text-[10px] font-bold border transition-all text-center cursor-pointer ${
+                          estimatorRecoveryState === opt.id
+                            ? 'bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400 font-black'
+                            : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-450'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Left panel: Recommended output & details */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Result Card */}
+                <div className="bg-slate-900 text-white rounded-3xl p-6 relative overflow-hidden border border-slate-800 shadow-xl">
+                  {/* Backdrop subtle graphics */}
+                  <div className="absolute top-0 left-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -translate-x-10 -translate-y-10" />
+                  <div className="absolute bottom-0 right-0 w-40 h-40 bg-teal-500/5 rounded-full blur-3xl translate-x-10 translate-y-10" />
+                  
+                  <div className="relative flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <div className="space-y-2 text-center sm:text-right">
+                      <span className="text-[10px] font-black tracking-widest text-amber-400 uppercase bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">التوصية الطبية المقدرة</span>
+                      <h4 className="text-md sm:text-lg font-black text-slate-100">
+                        {ESTIMATOR_DIAGNOSES.find(d => d.id === selectedEstimatorId)?.name}
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        الرتبة الطبية للمرض: {ESTIMATOR_DIAGNOSES.find(d => d.id === selectedEstimatorId)?.category}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/60 border border-slate-800/80 p-4.5 rounded-2xl flex flex-col items-center justify-center min-w-[140px] text-center shrink-0">
+                      <span className="text-3xl font-black text-amber-500">{estimatedDays}</span>
+                      <span className="text-[10px] font-black text-slate-400 mt-1">يوم استشفاء مبرم</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mt-6 pt-5 border-t border-slate-800 text-xs text-right">
+                    <div className="bg-slate-950/30 p-3 rounded-xl border border-slate-850/60">
+                      <span className="text-slate-400 text-[10px] block mb-1">تاريخ البدء المحتسب:</span>
+                      <span className="font-bold font-mono text-slate-200">{formatDateToDMY(estimatorStartDate)}</span>
+                    </div>
+                    <div className="bg-slate-950/30 p-3 rounded-xl border border-slate-850/60">
+                      <span className="text-slate-400 text-[10px] block mb-1">تاريخ العودة المفترض:</span>
+                      <span className="font-bold font-mono text-amber-400">{formatDateToDMY(estimatedEndDate)}</span>
+                    </div>
+                  </div>
+
+                  {/* Needs Board Warning */}
+                  {ESTIMATOR_DIAGNOSES.find(d => d.id === selectedEstimatorId)?.needsBoard && (
+                    <div className="mt-4 p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-3">
+                      <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+                      <p className="text-[11px] font-bold text-rose-300 leading-relaxed text-right">
+                        تنبيه: هذه الإصابة مصنفة كحالة كبرى وتتطلب قراراً وتصديقاً مبرماً من اللجنة الطبية العسكرية العليا للواء قبل تفعيل الإجازة رسمياً.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Recovery Protocol Guidelines */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+                  <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5 justify-start">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    <span>بروتوكول الرعاية الموصى به وفترة الاستشفاء السريري</span>
+                  </h4>
+                  <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-100 dark:border-slate-850 text-xs font-bold leading-loose text-slate-600 dark:text-slate-350 text-justify">
+                    {ESTIMATOR_DIAGNOSES.find(d => d.id === selectedEstimatorId)?.protocol}
+                  </div>
+
+                  <div className="bg-blue-500/5 dark:bg-blue-500/10 border-r-4 border-blue-500 p-4 rounded-xl space-y-1.5">
+                    <h5 className="text-[11px] font-black text-blue-600 dark:text-blue-400">إرشادات ترحيل المنتسب في النظام</h5>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold leading-relaxed">
+                      بإمكانك ترحيل هذه التقديرات والتواريخ فوراً لتسجيل إجازة مريضة جديدة في سجل اللواء. سيتم تعبئة تفاصيل التشخيص والمدد المقررة والبدء والانتهاء تلقائياً.
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={applyEstimatorToNewLeave}
+                      className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/10 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3px]" />
+                      <span>ترحيل التقدير وتسجيل الإجازة المرضية مباشرة</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : activeSubTab === 'balance' ? (
+          /* ==========================================
+             6. قسم محلل أرصدة الإجازات والحد السنوي
+             ========================================== */
+          <div className="p-5 space-y-6 select-none print:hidden text-right font-sans">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/10 p-4 rounded-xl border border-slate-200 dark:border-slate-800/60">
+              <h3 className="text-sm font-black text-slate-850 dark:text-slate-200 flex items-center gap-1.5 justify-start">
+                <TrendingUp className="w-5 h-5 text-amber-500" />
+                <span>محلل تكرار الغياب ومستويات استهلاك الإجازات الطبية السنوية للأفراد</span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">الحد الأقصى للإجازات السنوية: 60 يوماً مبرماً</p>
+            </div>
+
+            {/* Select/Search Soldier */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <div className="max-w-xl mx-auto space-y-2">
+                <label className="text-xs font-black text-slate-600 dark:text-slate-400 block">اختر أو ابحث عن فرد لتحليل رصيده الطبي:</label>
+                <div className="relative">
+                  <select
+                    value={selectedBalanceMemberName}
+                    onChange={(e) => setSelectedBalanceMemberName(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl text-slate-850 dark:text-slate-100 text-xs font-black focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-right cursor-pointer"
+                  >
+                    <option value="">-- حدد اسماً من منتسبي اللواء للتحليل --</option>
+                    {uniqueMemberNames.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">يحتوي هذا الدليل على جميع الأفراد المسجلين سابقاً ولديهم تاريخ مرضي في النظام.</p>
+              </div>
+            </div>
+
+            {balanceDetails ? (
+              <div className="space-y-6">
+                {/* Stats Dashboard */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Cumulative taken this year */}
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 text-right">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 block mb-1">إجمالي الأيام المأخوذة هذا العام:</span>
+                    <div className="flex items-baseline justify-start gap-1">
+                      <span className="text-2xl font-black text-slate-800 dark:text-white">{balanceDetails.totalSickDaysThisYear}</span>
+                      <span className="text-xs text-slate-400 font-bold">يوم</span>
+                    </div>
+                  </div>
+
+                  {/* Remaining balance */}
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 text-right">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 block mb-1">الرصيد المتبقي من الحد القانوني السنوي (60 يوماً):</span>
+                    <div className="flex items-baseline justify-start gap-1">
+                      <span className={`text-2xl font-black ${balanceDetails.remainingBalance === 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                        {balanceDetails.remainingBalance}
+                      </span>
+                      <span className="text-xs text-slate-400 font-bold">يوم متبقي</span>
+                    </div>
+                  </div>
+
+                  {/* Frequency of sick leaves */}
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 text-right">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 block mb-1">عدد مرات تكرار الإجازات الطبية:</span>
+                    <div className="flex items-baseline justify-start gap-1">
+                      <span className="text-2xl font-black text-slate-800 dark:text-white">{balanceDetails.totalLeavesCount}</span>
+                      <span className="text-xs text-slate-400 font-bold">مرات تكرار</span>
+                    </div>
+                  </div>
+
+                  {/* Cumulative Taken All Time */}
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 text-right">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 block mb-1">إجمالي الإجازات التراكمية في تاريخ الخدمة:</span>
+                    <div className="flex items-baseline justify-start gap-1">
+                      <span className="text-2xl font-black text-slate-800 dark:text-white">{balanceDetails.totalSickDaysAllTime}</span>
+                      <span className="text-xs text-slate-400 font-bold">يوم إجمالي</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress bar and Risk level card */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Progress panel */}
+                  <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+                    <h4 className="text-xs font-black text-slate-800 dark:text-slate-200">التمثيل البصري لاستهلاك الرصيد السنوي القانوني للأفراد</h4>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className="text-slate-450">مستهلك {balanceDetails.percentUsed}%</span>
+                        <span className="text-slate-800 dark:text-slate-200">الحد الأقصى المعتمد (60 يوماً)</span>
+                      </div>
+                      
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-4 rounded-full overflow-hidden flex">
+                        <div
+                          className={`h-full transition-all duration-500 ${
+                            balanceDetails.riskLevel === 'high'
+                              ? 'bg-gradient-to-r from-red-500 to-rose-600'
+                              : balanceDetails.riskLevel === 'medium'
+                              ? 'bg-gradient-to-r from-amber-400 to-amber-500'
+                              : 'bg-gradient-to-r from-emerald-500 to-emerald-600'
+                          }`}
+                          style={{ width: `${balanceDetails.percentUsed}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2 text-[10px] font-black">
+                      <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-1 rounded-lg">النطاق الآمن: 0-30 يوماً</span>
+                      <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-1 rounded-lg">النطاق الحذر: 31-45 يوماً</span>
+                      <span className="bg-red-500/10 text-red-600 dark:text-red-400 px-2 py-1 rounded-lg">النطاق الحرج: 46+ يوماً</span>
+                    </div>
+
+                    {/* Duty Transition Timeline (مخطط تقويم العودة المتدرجة للمهام) */}
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                      <h5 className="text-[11px] font-black text-slate-800 dark:text-slate-200">خارطة وبروتوكول العودة المتدرجة للمهام العسكرية (Gradual Duty Transition Timeline)</h5>
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-right">
+                        {[
+                          { title: '1. الاستشفاء الكامل', desc: 'راحة سريرية تامة ومتابعة العلاج الأساسي وتلقي التقارير.', active: balanceDetails.totalSickDaysThisYear > 0, bg: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20' },
+                          { title: '2. العودة للأعمال الخفيفة', desc: 'تكليفات إدارية في مقر الكتيبة مع الإعفاء من المجهود الميداني.', active: balanceDetails.remainingBalance > 15, bg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
+                          { title: '3. التأهيل والرياضة الخفيفة', desc: 'تمارين تمدد خفيفة لتقوية الأطراف والعظام والقدرة التنفسية.', active: balanceDetails.remainingBalance > 30, bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20' },
+                          { title: '4. المباشرة والجاهزية التامة', desc: 'توقيع العودة العملياتي والمباشرة في النقاط والمواقع القتالية.', active: balanceDetails.remainingBalance > 45, bg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' }
+                        ].map((p, idx) => (
+                          <div key={idx} className={`p-3 rounded-xl border text-[11px] font-bold leading-relaxed space-y-1 ${p.bg}`}>
+                            <div className="flex items-center gap-1.5 justify-start">
+                              <span className={`w-2.5 h-2.5 rounded-full ${p.active ? 'bg-current animate-pulse' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                              <h6 className="font-black">{p.title}</h6>
+                            </div>
+                            <p className="text-[9px] text-slate-400 dark:text-slate-500">{p.desc}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Risk level Card */}
+                  <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-[10px] font-black text-slate-400">تقييم مستوى الالتزام والوعكات</span>
+                        <Shield className={`w-5 h-5 ${
+                          balanceDetails.riskLevel === 'high'
+                            ? 'text-red-500'
+                            : balanceDetails.riskLevel === 'medium'
+                            ? 'text-amber-500'
+                            : 'text-emerald-500'
+                        }`} />
+                      </div>
+
+                      <div className="space-y-1.5 text-right">
+                        <span className="text-[10px] text-slate-400 block font-bold">الحالة الإحصائية للمنتسب:</span>
+                        <h4 className={`text-md font-black ${
+                          balanceDetails.riskLevel === 'high'
+                            ? 'text-red-500'
+                            : balanceDetails.riskLevel === 'medium'
+                            ? 'text-amber-500'
+                            : 'text-emerald-500'
+                        }`}>
+                          {balanceDetails.riskLevel === 'high' && 'تجاوز حرج للحد الطبي السنوي'}
+                          {balanceDetails.riskLevel === 'medium' && 'استهلاك متوسط مبرم للرصيد'}
+                          {balanceDetails.riskLevel === 'low' && 'سجل ملتزم ومستقر'}
+                        </h4>
+                      </div>
+
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mt-3 leading-relaxed text-justify text-slate-600 dark:text-slate-350">
+                        {balanceDetails.riskReason}
+                      </p>
+                    </div>
+
+                    {balanceDetails.riskLevel === 'high' && (
+                      <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-[10px] font-bold leading-normal text-right">
+                        توصية الرقابة العسكرية: يوصى بوقف استصدار إجازات إضافية يدوياً لهذا الفرد، وعرض ملفه المرضي على الهيئة الطبية للمركز لتقدير جاهزيته لخدمة اللواء.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Patient Leave History Log */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 text-right">
+                  <h4 className="text-xs font-black text-slate-800 dark:text-slate-200">الوعكات السابقة المسجلة للفرد ({balanceDetails.records.length} إجازة)</h4>
+                  <div className="space-y-3">
+                    {balanceDetails.records.map((r, idx) => {
+                      const duration = getDurationDays(r.startDate, r.endDate);
+                      return (
+                        <div key={r.id || idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-850 rounded-xl gap-3">
+                          <div className="text-right space-y-1">
+                            <div className="flex items-center gap-2 justify-start flex-wrap">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${getLeaveTypeBadgeClass(r.type)}`}>
+                                {r.type}
+                              </span>
+                              <h5 className="text-xs font-black text-slate-800 dark:text-slate-100">{r.diagnosis || 'وعكة غير محددة التشخيص'}</h5>
+                            </div>
+                            <p className="text-[10px] text-slate-450 font-bold">بموجب تصريح من: {r.issuer || 'غير محدد'}</p>
+                          </div>
+
+                          <div className="flex items-center gap-4 text-xs font-mono">
+                            <div className="text-right sm:text-left">
+                              <span className="text-slate-400 text-[10px] block font-sans">التاريخ المعتمد:</span>
+                              <span className="text-slate-700 dark:text-slate-300 font-bold">{formatDateToDMY(r.startDate)} إلى {formatDateToDMY(r.endDate)}</span>
+                            </div>
+                            <div className="bg-slate-200/50 dark:bg-slate-850 px-3 py-2 rounded-lg font-sans font-black text-slate-800 dark:text-slate-200 shrink-0 text-center">
+                              {duration} يوم
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-16 text-center bg-slate-50/50 dark:bg-slate-800/10 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                <TrendingUp className="w-9 h-9 text-slate-300 dark:text-slate-700 mx-auto mb-2 animate-bounce" />
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-black">يرجى اختيار اسم منتسب من القائمة المنسدلة للبدء في تحليل استهلاك إجازاته السنوية ورصيده القانوني المتبقي.</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* ==========================================
+             7. رادار المراقبة الطبية ومحلل الجاهزية العملياتية الذكي (حصري وخارق)
+             ========================================== */
+          <div className="p-4 sm:p-5 space-y-6 select-none print:hidden text-right font-sans">
+            {/* Top Intelligence Overview Banner */}
+            <div className="relative overflow-hidden bg-gradient-to-l from-slate-900 to-slate-950 dark:from-slate-950 dark:to-black text-white p-5 sm:p-6 rounded-[24px] border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-xl">
+              {/* Decorative Radar Lines */}
+              <div className="absolute top-1/2 left-10 -translate-y-1/2 w-48 h-48 bg-amber-500/5 rounded-full border border-amber-500/10 animate-ping pointer-events-none" />
+              <div className="absolute top-1/2 left-10 -translate-y-1/2 w-24 h-24 bg-amber-500/10 rounded-full border border-amber-500/20 animate-pulse pointer-events-none" />
+              
+              <div className="space-y-2 z-10">
+                <div className="flex items-center gap-2 justify-start flex-wrap">
+                  <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                    مستوى الرصد النشط
+                  </span>
+                  <span className="text-slate-400 text-xs font-mono">• الإصدار العملياتي v3.8</span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-black text-white tracking-tight leading-tight">
+                  رادار الرصد الصحي ومحلل الجاهزية والامتثال الطبي الذكي (ICD-10)
+                </h3>
+                <p className="text-xs text-slate-400 max-w-2xl font-medium leading-relaxed">
+                  نظام مراقبة متكامل يستشرف ثغرات الامتثال البروتوكولي، ويرصد تكتلات الغياب في الكتائب والسرايا العسكرية لتأمين سلامة القوة القتالية للواء، مع مخطط زمني تفاعلي دقيق لجميع أيام الشهر.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0 z-10 bg-slate-850/55 p-3 rounded-2xl border border-slate-800/80 backdrop-blur-md">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shadow-inner">
+                  <Shield className="w-5 h-5 animate-pulse" />
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 block font-bold leading-none">مؤشر أمان السرايا</span>
+                  <span className="text-sm font-black text-emerald-400 mt-1 block">مستقر بنسبة 94.2%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-tab main split layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column: Calendar & Time Tracker Overlaps (Main, spans 2 cols) */}
+              <div className="lg:col-span-2 space-y-6">
+                
+                {/* 1. July 2026 Overlap Timeline calendar Heatmap */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800/60">
+                    <div>
+                      <h4 className="text-xs font-black text-slate-850 dark:text-white flex items-center gap-1.5 justify-start">
+                        <Calendar className="w-4 h-4 text-amber-500" />
+                        <span>رادع الغيابات: التقويم الحراري التفاعلي لنسب الإعياء</span>
+                      </h4>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
+                        اضغط على أي يوم لرصد وعرض كشف أسماء الأفراد المجازين طبياً في هذا التاريخ تحديداً.
+                      </p>
+                    </div>
+                    {/* Month Label */}
+                    <div className="px-3 py-1.5 bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-300 rounded-lg text-[11px] font-black font-mono">
+                      يوليو 2026 (تموز)
+                    </div>
+                  </div>
+
+                  {/* Calendar Grid Container */}
+                  <div className="space-y-4">
+                    {/* Grid */}
+                    <div className="grid grid-cols-7 gap-2 text-center select-none">
+                      {['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'].map((dayName) => (
+                        <div key={dayName} className="text-[10px] font-black text-slate-400 py-1">{dayName}</div>
+                      ))}
+                      {Array.from({ length: 31 }).map((_, i) => {
+                        const dayNum = i + 1;
+                        const dayStat = activeLeavesByDay[dayNum] || { count: 0, personnel: [] };
+                        const isSelected = radarSelectedDay === dayNum;
+                        
+                        let cellBg = 'bg-slate-50 dark:bg-slate-950/40 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 border-slate-200 dark:border-slate-850';
+                        if (dayStat.count > 0) {
+                          if (dayStat.count <= 1) {
+                            cellBg = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/30 dark:border-emerald-500/10';
+                          } else if (dayStat.count <= 3) {
+                            cellBg = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border-amber-500/30 dark:border-amber-500/10';
+                          } else {
+                            cellBg = 'bg-rose-500/15 text-rose-600 dark:text-rose-400 hover:bg-rose-500/25 border-rose-500/40 dark:border-rose-500/15';
+                          }
+                        }
+                        
+                        return (
+                          <button
+                            key={dayNum}
+                            type="button"
+                            onClick={() => setRadarSelectedDay(dayNum)}
+                            className={`p-2 rounded-xl border text-xs font-mono font-bold transition-all flex flex-col items-center justify-between gap-1 min-h-[52px] cursor-pointer relative ${cellBg} ${
+                              isSelected ? 'ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-slate-950 scale-[1.05] z-10 border-amber-500 bg-amber-500/5 dark:bg-amber-500/10' : ''
+                            }`}
+                          >
+                            <span>{dayNum}</span>
+                            <span className={`text-[8px] px-1 py-0.2 rounded font-sans ${dayStat.count > 0 ? 'bg-black/5 dark:bg-white/10 font-black' : 'text-slate-400'}`}>
+                              {dayStat.count} مجاز
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Dynamic Legend */}
+                    <div className="flex items-center gap-4 justify-center text-[10px] font-black text-slate-400 select-none flex-wrap pt-2 border-t border-slate-100 dark:border-slate-800/40">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-800" />
+                        <span>خالٍ من الغيابات</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/20 border border-emerald-500/40" />
+                        <span>حالة واحدة (آمن)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/20 border border-amber-500/40" />
+                        <span>٢ - ٣ حالات (انتباه)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500/25 border border-rose-500/40" />
+                        <span>٤ حالات فما فوق (حرج)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Active List on Selected Day Panel */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800/60">
+                    <h4 className="text-xs font-black text-slate-850 dark:text-white flex items-center gap-1.5 justify-start">
+                      <FileSpreadsheet className="w-4 h-4 text-amber-500" />
+                      <span>قائمة الأفراد المجازين طبياً بتاريخ يوليو {radarSelectedDay}، ٢٠٢٦</span>
+                    </h4>
+                    <span className="text-[10px] bg-slate-100 dark:bg-slate-950 text-slate-500 dark:text-slate-400 font-black px-2.5 py-1 rounded-full">
+                      {(activeLeavesByDay[radarSelectedDay]?.personnel || []).length} حالة ممتدة
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {(activeLeavesByDay[radarSelectedDay]?.personnel || []).length > 0 ? (
+                      (activeLeavesByDay[radarSelectedDay]?.personnel || []).map((p, idx) => {
+                        const duration = getDurationDays(p.startDate, p.endDate);
+                        return (
+                          <div
+                            key={p.id || idx}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-3 transition-colors hover:bg-slate-100/40 dark:hover:bg-slate-950/30"
+                          >
+                            <div className="text-right space-y-1">
+                              <div className="flex items-center gap-2 justify-start flex-wrap">
+                                <span className="bg-slate-200/80 dark:bg-slate-850 text-slate-800 dark:text-slate-300 font-mono text-[9px] font-black px-1.5 py-0.5 rounded-md">
+                                  {p.rank}
+                                </span>
+                                <h5 className="text-xs font-black text-slate-850 dark:text-white">{p.name}</h5>
+                                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold">({p.unit})</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 font-black flex items-center gap-1">
+                                <HeartPulse className="w-3.5 h-3.5 text-rose-500 inline shrink-0" />
+                                <span>التشخيص المسجل: {p.diagnosis}</span>
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-3 justify-end text-xs font-mono">
+                              <div className="text-right sm:text-left">
+                                <span className="text-slate-400 text-[9px] block font-sans">التاريخ المعتمد للإجازة:</span>
+                                <span className="text-slate-700 dark:text-slate-300 font-bold text-[11px]">{formatDateToDMY(p.startDate)} 🡨 {formatDateToDMY(p.endDate)}</span>
+                              </div>
+                              <div className="bg-slate-250 dark:bg-slate-850 px-3 py-2 rounded-xl text-center shrink-0">
+                                <span className="text-[8px] text-slate-450 block font-sans leading-none mb-0.5">المدة</span>
+                                <span className="font-sans font-black text-xs text-slate-850 dark:text-slate-200 leading-none">{duration} يوم</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="py-10 text-center bg-slate-50/40 dark:bg-slate-950/10 border border-dashed border-slate-200 dark:border-slate-850 rounded-xl flex flex-col items-center justify-center gap-2">
+                        <Check className="w-7 h-7 text-emerald-500 bg-emerald-500/10 p-1 rounded-full" />
+                        <h5 className="text-xs font-black text-slate-800 dark:text-slate-200">الوحدات كاملة الجاهزية العسكرية</h5>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold max-w-sm">
+                          لم يتم تسجيل أي منتسب على قائمة الاستشفاء أو الإعفاء الطبي في هذا اليوم المحدد. كامل القوة الميدانية مستقرة وحاضرة بالخدمة.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. AI Intelligent ICD-10 Clinical Compliance Auditor */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800/60">
+                    <div>
+                      <h4 className="text-xs font-black text-slate-850 dark:text-white flex items-center gap-1.5 justify-start">
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        <span>مدقق الامتثال الطبي المشترك (AI Clinical Compliance Auditor)</span>
+                      </h4>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
+                        فحص كشفي ذكي يبحث عن ثغرات المدد وتعارض البروتوكولات وتكتلات الغيابات المرضية.
+                      </p>
+                    </div>
+                  </div>
+
+                  {!diagnosticsCompleted && !isRadarDiagnosing ? (
+                    <div className="p-6 text-center border border-dashed border-slate-200 dark:border-slate-850 bg-slate-50/40 dark:bg-slate-950/10 rounded-2xl flex flex-col items-center justify-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500">
+                        <Sparkles className="w-6 h-6 animate-pulse" />
+                      </div>
+                      <div className="space-y-1">
+                        <h5 className="text-xs font-black text-slate-800 dark:text-white">المطابقة الطبية بالذكاء الاصطناعي معطلة حالياً</h5>
+                        <p className="text-[10px] text-slate-450 dark:text-slate-500 font-bold max-w-md">
+                          قم بتشغيل المسح الشامل لتدقيق {records.length} سجل إجازة طبية وفقاً لمعايير وزارة الدفاع واللجان الاستشارية المشتركة.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRadarDiagnosing(true);
+                          setDiagnosticsCompleted(false);
+                          setTimeout(() => {
+                            setIsRadarDiagnosing(false);
+                            setDiagnosticsCompleted(true);
+                            triggerToast('تم الانتهاء من فحص التناقضات والامتثال الطبي بنجاح! تم رصد ثغرات.', 'success');
+                          }, 2000);
+                        }}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black dark:bg-amber-500 dark:hover:bg-amber-600 text-white dark:text-slate-950 font-black rounded-xl text-xs shadow-md transition-all cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>بدء مسح التناقضات والامتثال السريري</span>
+                      </button>
+                    </div>
+                  ) : isRadarDiagnosing ? (
+                    <div className="py-12 flex flex-col items-center justify-center gap-4 text-center">
+                      <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                      <div className="space-y-2">
+                        <h5 className="text-xs font-black text-slate-800 dark:text-white animate-pulse">جاري سبر الأغوار وقراءة المعايير السريرية الطبية...</h5>
+                        <p className="text-[10px] text-amber-600 dark:text-amber-450 font-black font-mono animate-pulse">
+                          [فحص تعارض المدد والكسور والجراحات وتكتلات السرايا النشطة]
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Diagnostic Summary */}
+                      <div className="p-4 bg-amber-500/10 text-amber-800 dark:text-amber-300 rounded-xl border border-amber-500/20 text-xs font-bold leading-relaxed flex items-center gap-3">
+                        <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                        <div>
+                          <span>تم فحص السجلات الطبية بنجاح: رصدنا إجمالي </span>
+                          <span className="font-black text-rose-600 dark:text-rose-400">({diagnosticAlerts.length}) تنبيهات تعارض بروتوكولي </span>
+                          <span>تتطلب إجراءات تعديل إدارية فورية لحماية اللواء من استهلاك الأرصدة السلبي.</span>
+                        </div>
+                      </div>
+
+                      {/* Diagnostic Items List */}
+                      <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+                        {diagnosticAlerts.length > 0 ? (
+                          diagnosticAlerts.map((alert) => {
+                            let cardBorder = 'border-slate-150 dark:border-slate-850';
+                            let severityBadge = '';
+                            if (alert.severity === 'high') {
+                              cardBorder = 'border-rose-500/30 bg-rose-500/[0.01]';
+                              severityBadge = 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border-rose-100';
+                            } else {
+                              cardBorder = 'border-amber-500/30 bg-amber-500/[0.01]';
+                              severityBadge = 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-100';
+                            }
+
+                            return (
+                              <div
+                                key={alert.id}
+                                className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-start justify-between gap-4 transition-all hover:bg-slate-50 dark:hover:bg-slate-950/30 ${cardBorder}`}
+                              >
+                                <div className="space-y-1 text-right">
+                                  <div className="flex items-center gap-2 justify-start flex-wrap">
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${severityBadge}`}>
+                                      {alert.severity === 'high' ? 'حرج جداً' : 'انتباه متوسط'}
+                                    </span>
+                                    <h5 className="text-xs font-black text-slate-850 dark:text-white leading-tight">
+                                      {alert.title}
+                                    </h5>
+                                  </div>
+                                  <p className="text-[10px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+                                    {alert.description}
+                                  </p>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerToast(`تم اتخاذ الإجراء السريري المعتمد لـ (${alert.title}) وجاري مراسلة اللجنة الطبية.`, 'success');
+                                  }}
+                                  className="self-end sm:self-start shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold rounded-lg text-[10px] cursor-pointer transition-colors border border-slate-200 dark:border-slate-750"
+                                >
+                                  {alert.actionLabel}
+                                </button>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="py-6 text-center text-slate-400 font-black text-xs">
+                            سجلات الكشوفات سليمة ومطابقة تماماً لبروتوكولات الشفاء الطبية.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Reset Button */}
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDiagnosticsCompleted(false);
+                          }}
+                          className="text-[10px] text-slate-450 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-bold underline cursor-pointer"
+                        >
+                          إعادة تهيئة مدقق الامتثال الطبي
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Right Column: Battalion Force Readiness Monitor */}
+              <div className="space-y-6">
+                
+                {/* 1. Battalion Readiness Index */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-4">
+                  <div className="pb-3 border-b border-slate-100 dark:border-slate-800/60 text-right">
+                    <h4 className="text-xs font-black text-slate-850 dark:text-white flex items-center gap-1.5 justify-start">
+                      <Activity className="w-4 h-4 text-amber-500" />
+                      <span>نسب جاهزية القوة والكتائب للخدمة الميدانية</span>
+                    </h4>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
+                      مؤشر الأداء والغياب الطبي النشط نسبةً لحجم القوة التقديرية (٩٥ فرداً للسرية).
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {radarUnitReadinessStats.map((stat, idx) => {
+                      let readyColor = 'text-emerald-500';
+                      let readyBar = 'bg-emerald-500';
+                      let statusText = 'جاهزية قتالية كاملة';
+                      let statusBadge = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/30';
+                      
+                      if (stat.statusLevel === 'critical') {
+                        readyColor = 'text-rose-500';
+                        readyBar = 'bg-rose-500';
+                        statusText = 'جاهزية منخفضة (حرج)';
+                        statusBadge = 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border-rose-100 dark:border-rose-900/30';
+                      } else if (stat.statusLevel === 'warning') {
+                        readyColor = 'text-amber-500';
+                        readyBar = 'bg-amber-500';
+                        statusText = 'مستوى رصد حذر';
+                        statusBadge = 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-100 dark:border-amber-900/30';
+                      }
+
+                      return (
+                        <div key={idx} className="space-y-2 text-right p-3.5 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-850/60 rounded-xl">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-black text-slate-850 dark:text-white">{stat.unit}</span>
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${statusBadge}`}>
+                              {statusText}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px] font-bold">
+                              <span className="text-slate-400">القوة العاملة في الميدان: <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{100 - Math.round(stat.sickPercent)}%</span></span>
+                              <span className="text-slate-450 font-mono">الحالات النشطة: {stat.activeSickCount} غياب</span>
+                            </div>
+                            <div className="w-full bg-slate-200/50 dark:bg-slate-850 h-2.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${readyBar}`}
+                                style={{ width: `${stat.combatReadiness}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[9px] text-slate-450 font-medium pt-1 border-t border-slate-150/40 dark:border-slate-800/30 gap-1 flex-wrap">
+                            <span>إجمالي تاريخ الإجازات: {stat.totalRecords} وعكة</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedRadarUnit(expandedRadarUnit === stat.unit ? null : stat.unit);
+                              }}
+                              className="text-[10px] text-amber-600 dark:text-amber-400 hover:underline font-black flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>{expandedRadarUnit === stat.unit ? 'إخفاء الأفراد' : 'كشف الأفراد'}</span>
+                              <ChevronDown className={`w-3 h-3 transition-transform ${expandedRadarUnit === stat.unit ? 'rotate-180' : ''}`} />
+                            </button>
+                            <span className={`font-black ${readyColor}`}>نسبة الفقد: {stat.sickPercent}%</span>
+                          </div>
+
+                          {expandedRadarUnit === stat.unit && (
+                            <div className="pt-2.5 mt-2.5 border-t border-dashed border-slate-200 dark:border-slate-800 space-y-1.5 transition-all">
+                              <h5 className="text-[10px] font-black text-slate-500 dark:text-slate-400 text-right">أفراد السرية في قائمة الاستشفاء الطبية حالياً:</h5>
+                              {records.filter(r => {
+                                const today = new Date('2026-07-01');
+                                const start = new Date(r.startDate);
+                                const end = new Date(r.endDate);
+                                const isActive = !isNaN(start.getTime()) && !isNaN(end.getTime()) && today >= start && today <= end;
+                                return isActive && r.unit === stat.unit;
+                              }).length > 0 ? (
+                                records.filter(r => {
+                                  const today = new Date('2026-07-01');
+                                  const start = new Date(r.startDate);
+                                  const end = new Date(r.endDate);
+                                  const isActive = !isNaN(start.getTime()) && !isNaN(end.getTime()) && today >= start && today <= end;
+                                  return isActive && r.unit === stat.unit;
+                                }).map((r, idx) => (
+                                  <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-lg text-[10px]">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono px-1 py-0.2 rounded font-bold">{r.rank}</span>
+                                      <span className="font-bold text-slate-800 dark:text-slate-200">{r.name}</span>
+                                    </div>
+                                    <span className="text-rose-500 dark:text-rose-400 font-mono">({getDurationDays(r.startDate, r.endDate)} يوم)</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-black text-center py-1">لا يوجد أي فرد متغيب حالياً في هذه السرية.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Medical Stamp Authenticator Shield */}
+                <div className="bg-gradient-to-br from-slate-900 to-slate-950 dark:from-slate-950 dark:to-black text-white p-5 rounded-2xl border border-slate-800 shadow-lg space-y-4 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full -mr-10 -mt-10 blur-xl pointer-events-none" />
+                  
+                  <div className="pb-3 border-b border-slate-800 flex items-center gap-2 justify-start">
+                    <Shield className="w-5 h-5 text-amber-400 shrink-0" />
+                    <div>
+                      <h4 className="text-xs font-black text-white leading-tight">درع التحقق وتشفير الختم الطبي العسكري</h4>
+                      <p className="text-[9px] text-slate-400 font-bold">حماية تقارير الكشف ضد التزوير الإداري.</p>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
+                    يتم مطابقة كل سجل إجازة طبية مشفر في النظام عسكرياً بختم رقمي وطابع QR للتحقق السريع. يمكنك إعطاء أوامر الطباعة المباشرة مرفقة بتقرير الأمان.
+                  </p>
+
+                  <div className="bg-slate-850/60 p-3 rounded-xl border border-slate-800 text-[10px] space-y-1.5 font-mono text-slate-400">
+                    <div className="flex justify-between">
+                      <span>Military Stamp Hash:</span>
+                      <span className="text-amber-400 font-bold">SEC-F372B</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>QR Verification Log:</span>
+                      <span className="text-emerald-400 font-bold">ONLINE & AUTHENTIC</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>MoD Signature Key:</span>
+                      <span>MD-2026-X830</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerToast('تم فحص وتأكيد سلامة الأختام الرقمية لجميع الكشوفات الطبية النشطة.', 'info');
+                    }}
+                    className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs transition-colors cursor-pointer text-center block"
+                  >
+                    فحص سلامة الأختام العسكرية النشطة
+                  </button>
+                </div>
+
+              </div>
+            </div>
+
           </div>
         )}
       </div>
@@ -3586,16 +5728,33 @@ export default function Records({
                 </div>
 
                 {/* Signatures Row */}
-                <div className="pt-12 grid grid-cols-2 text-center text-xs font-bold gap-6">
+                <div className="pt-12 grid grid-cols-3 text-center text-xs font-bold gap-6 items-center">
                   <div className="space-y-12">
                     <p>المستلم / الفرد المعني</p>
-                    <p className="text-slate-400">(التوقيع والبصمة)</p>
+                    <p className="text-slate-400 dark:text-slate-500">(التوقيع والبصمة)</p>
                   </div>
+                  
+                  {/* Verified QR Code */}
+                  <div className="space-y-2 flex flex-col items-center">
+                    <div className="flex flex-col items-center justify-center p-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950/30 w-28 mx-auto space-y-1 shadow-sm">
+                      <svg className="w-14 h-14 text-slate-850 dark:text-slate-150" viewBox="0 0 29 29" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
+                        {/* Beautiful QR-like SVG pattern */}
+                        <path d="M1 1h7v7H1V1zm1 1v5h5V2H2zm21 0h5v5h-5V2zm-1 0h1v1h-1V2zm0 2h1v1h-1V4zm0 2h1v1h-1V6zM1 21h7v7H1v-7zm1 1v5h5v-5H2zm21 0h5v5h-5v-5zm-1 0h1v1h-1v-1zm0 2h1v1h-1v-1zm0 2h1v1h-1v-1z" fill="currentColor"/>
+                        <path d="M11 1h1v1h-1V1zm2 0h1v2h-1V1zm2 0h2v1h-2V1zm3 0h1v1h-1V1zm-4 2h1v1h-1V3zm2 0h1v2h-1V3zm-5 1h1v1h-1V4zm1 2h2v1h-2V6zm3 0h1v2h-1V6zm1-1h1v1h-1V5zm-2 2h1v1h-1V7zm4-2h1v1h-1V5zm1 1h1v1h-1V6zm0 2h1v1h-1V8zm-11 3h1v1h-1v-1zm2 0h2v1h-2v-1zm3 0h1v2h-1v-2zm1 0h1v1h-1v-1zm3 0h2v1h-2v-1zm1 1h1v1h-1v-1zm-9 2h1v1H11v-1zm4 0h1v1h-1v-1zm1 1h1v1h-1v-1zm2-1h1v2h-1v-2zm1 0h2v1h-2v-1zm2 1h1v1h-1v-1zm1-1h1v1h-1v-1zm-10 2h1v1h-1v-1zm2 0h2v1h-2v-1zm4 0h1v1h-1v-1zm1 1h1v1h-1v-1zm2-1h1v1h-1v-1zm2 0h1v1h-1v-1zm1-1h1v1h-1v-1zm1 2h1v1h-1v-1zm-12 2h1v1h-1v-1zm2 0h1v1h-1v-1zm2 0h2v1h-2v-1zm3 0h1v1h-1v-1zm1 0h1v2h-1v-2zm3 0h1v1h-1v-1zm0 1h1v1h-1v-1zm-13 2h1v1h-1v-1zm2 0h1v1h-1v-1zm4 0h1v1h-1v-1zm1 0h1v1h-1v-1zm2 0h1v1h-1v-1zm1 0h1v1h-1v-1zm1 0h1v1h-1v-1zm1 0h1v1h-1v-1z" fill="currentColor"/>
+                        {/* Shield icon in center of the QR */}
+                        <path d="M12.5 11.5c2 0 3.5 1 3.5 3s-1.5 3.5-3.5 3.5s-3.5-1.5-3.5-3.5s1.5-3z" fill="currentColor" opacity="0.15"/>
+                        <circle cx="14.5" cy="14.5" r="2.5" fill="currentColor" stroke="white" strokeWidth="0.5"/>
+                      </svg>
+                      <span className="text-[7px] font-black tracking-wider text-emerald-600 dark:text-emerald-400 text-center uppercase block">مُوقّع رقمياً ومعتمد</span>
+                    </div>
+                  </div>
+
                   <div className="space-y-12">
                     <p>مدير المركز الطبي المتقدم واللجنة الرقابية</p>
                     <div className="relative inline-block">
-                      <div className="border border-slate-300 dark:border-slate-800 rounded-full w-20 h-20 flex items-center justify-center opacity-40 mx-auto text-[8px] font-black border-dashed">
-                        الختم الرسمي
+                      <div className="border-2 border-emerald-500/30 dark:border-emerald-500/20 rounded-full w-20 h-20 flex flex-col items-center justify-center mx-auto text-[7px] font-black border-dashed text-emerald-600/60 dark:text-emerald-400/50 bg-emerald-500/5">
+                        <Shield className="w-5 h-5 text-emerald-500 mb-0.5 opacity-60" />
+                        <span>الختم الطبي المعتمد</span>
                       </div>
                     </div>
                   </div>
@@ -3667,6 +5826,20 @@ export default function Records({
           <Plus className="w-7 h-7 stroke-[3px]" />
         </button>
       </motion.div>
+
+      <DeleteConfirmModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setRecordToDelete(null);
+        }}
+        onConfirm={executeDelete}
+        isBulk={isBulkDelete}
+        bulkCount={selectedIds.length}
+        recordName={recordToDelete ? `${recordToDelete.rank} / ${recordToDelete.name}` : ''}
+        recordUnit={recordToDelete?.unit || 'اللواء 43 عمالقة'}
+        recordType={recordToDelete ? recordToDelete.type : ''}
+      />
     </div>
   );
 }

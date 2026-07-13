@@ -282,6 +282,7 @@ export default function App() {
                   records={records}
                   onUpdate={handleUpdateRecord}
                   onAdd={handleAddRecord}
+                  onDelete={handleDeleteRecord}
                   setCurrentPage={setCurrentPage}
                   triggerToast={triggerToast}
                 />
@@ -308,17 +309,21 @@ export default function App() {
               {currentPage === 'reports' && (
                 <ReportsCenter
                   records={records}
+                  onDelete={handleDeleteRecord}
                   triggerToast={triggerToast}
                 />
               )}
               {currentPage === 'board' && (
                 <MedicalBoard
                   records={records}
+                  onUpdateRecord={handleUpdateRecord}
                   triggerToast={triggerToast}
                 />
               )}
               {currentPage === 'pharmacy' && (
                 <Pharmacy
+                  records={records}
+                  onUpdateRecord={handleUpdateRecord}
                   triggerToast={triggerToast}
                 />
               )}

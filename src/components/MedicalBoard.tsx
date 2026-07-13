@@ -21,12 +21,14 @@ import {
   Building,
   RotateCcw,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  Trash2
 } from 'lucide-react';
 import { LeaveRecord, MedicalBoardDecision } from '../types';
 
 interface MedicalBoardProps {
   records: LeaveRecord[];
+  onUpdateRecord?: (record: LeaveRecord) => Promise<void>;
   triggerToast: (text: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -69,7 +71,7 @@ const SEED_BOARD_DECISIONS: MedicalBoardDecision[] = [
   }
 ];
 
-export default function MedicalBoard({ records, triggerToast }: MedicalBoardProps) {
+export default function MedicalBoard({ records, onUpdateRecord, triggerToast }: MedicalBoardProps) {
   // Load and store medical decisions with LocalStorage persistence
   const [decisions, setDecisions] = useState<MedicalBoardDecision[]>(() => {
     const saved = localStorage.getItem('military_board_decisions');
@@ -133,8 +135,17 @@ export default function MedicalBoard({ records, triggerToast }: MedicalBoardProp
       soldierUnit: record.unit || 'اللواء 43 عمالقة - الكتيبة الأولى',
       condition: record.diagnosis
     }));
+    setSelectedLeaveId(record.id);
     setSoldierSearchInput('');
     triggerToast(`تم استيراد بيانات العسكري: ${record.name}`, 'info');
+  };
+
+  // Delete decision record
+  const handleDeleteDecision = (id: string, soldierName: string) => {
+    if (confirm(`تنبيه عسكري حاسم: هل أنت متأكد تماماً من رغبتك في حذف القرار الطبي الصادر للمنتسب "${soldierName}"؟ لا يمكن استعادة هذا القرار بعد حذفه.`)) {
+      setDecisions(prev => prev.filter(item => item.id !== id));
+      triggerToast('تم حذف قرار اللجنة الطبية بنجاح', 'success');
+    }
   };
 
   // Helper to generate a new ruling number
@@ -193,7 +204,42 @@ export default function MedicalBoard({ records, triggerToast }: MedicalBoardProp
     };
 
     setDecisions(prev => [newDecision, ...prev]);
+
+    // Update soldier's leave record history if found
+    const targetRecord = records.find(r => r.id === selectedLeaveId) || records.find(r => r.name.trim() === formData.soldierName.trim());
+    if (targetRecord && onUpdateRecord) {
+      const fitnessText = 
+        formData.fitnessLevel === 'fit_light' ? 'خدمة خفيفة بدون سلاح' :
+        formData.fitnessLevel === 'unfit_temp' ? 'غير لائق للخدمة مؤقتاً' :
+        formData.fitnessLevel === 'unfit_permanent' ? 'غير لائق للخدمة نهائياً (تقاعد طبي)' :
+        formData.fitnessLevel === 'transfer_office' ? 'نقل لعمل مكتبي وإداري' : formData.fitnessLevel;
+
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+
+      const updatedRecord: LeaveRecord = {
+        ...targetRecord,
+        history: [
+          ...(targetRecord.history || []),
+          {
+            date: dateStr,
+            action: 'تعديل',
+            details: `قرار اللجنة الطبية العسكرية رقم (${formData.rulingNumber}): تصنيف اللياقة [${fitnessText}]. التوصيات: ${formData.committeeNotes.trim() || 'لا توجد توصيات إضافية.'}`
+          }
+        ]
+      };
+
+      onUpdateRecord(updatedRecord)
+        .then(() => {
+          triggerToast(`تم تحديث الملف الطبي العسكري للجندي ${targetRecord.name} بقرار اللجنة`, 'success');
+        })
+        .catch(err => {
+          console.error('Failed to update soldier history:', err);
+        });
+    }
+
     setIsAddingDecision(false);
+    setSelectedLeaveId('');
     // Reset form
     setFormData({
       soldierName: '',
@@ -408,13 +454,22 @@ export default function MedicalBoard({ records, triggerToast }: MedicalBoardProp
                         </span>
                       </td>
                       <td className="p-4 text-center whitespace-nowrap">
-                        <button
-                          onClick={() => setActiveCertificate(d)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-250 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-bold rounded-lg transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer text-[10px] mx-auto"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>توليد شهادة القرار</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => setActiveCertificate(d)}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-250 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-bold rounded-lg transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer text-[10px]"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>توليد شهادة القرار</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDecision(d.id, d.soldierName)}
+                            title="حذف القرار"
+                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

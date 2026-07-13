@@ -45,14 +45,25 @@ import {
   Printer,
   Smartphone,
   Store,
-  Award
+  Award,
+  Phone,
+  PhoneCall,
+  PhoneOff,
+  MessageSquare,
+  Compass,
+  MapPin,
+  ShieldCheck,
+  Trash2
 } from 'lucide-react';
 import { LeaveRecord } from '../types';
+import DeleteConfirmModal from './DeleteConfirmModal';
+import AIBulkLeaves from './AIBulkLeaves';
 
 interface DashboardProps {
   records: LeaveRecord[];
   onUpdate?: (record: LeaveRecord) => Promise<void>;
   onAdd?: (record: LeaveRecord) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   setCurrentPage?: (page: 'dashboard' | 'records' | 'analytics' | 'tools' | 'reports' | 'board' | 'pharmacy') => void;
   triggerToast?: (text: string, type: 'success' | 'error' | 'info') => void;
 }
@@ -111,7 +122,7 @@ const FIRST_AID_GUIDE = [
   }
 ];
 
-export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, triggerToast }: DashboardProps) {
+export default function Dashboard({ records, onUpdate, onAdd, onDelete, setCurrentPage, triggerToast }: DashboardProps) {
   // Today's date reference
   const todayStr = useMemo(() => {
     return new Date().toISOString().split('T')[0];
@@ -141,13 +152,132 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
   const [selectedVerifiedRecordId, setSelectedVerifiedRecordId] = useState('');
   const [quickContactStatus, setQuickContactStatus] = useState<LeaveRecord['contactStatus'] | ''>('');
   const [quickContactNote, setQuickContactNote] = useState('');
+
+  // Custom Delete Modal States
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<LeaveRecord | null>(null);
+
+  const executeDelete = async () => {
+    if (!onDelete || !recordToDelete) return;
+    try {
+      await onDelete(recordToDelete.id);
+      if (triggerToast) triggerToast('تم حذف السجل بنجاح من سجلات السيطرة الكلية', 'success');
+    } catch (err) {
+      if (triggerToast) triggerToast('حدث خطأ أثناء محاولة حذف السجل العسكري', 'error');
+    }
+  };
+  
+  // --- New Professional Monitoring Portal States ---
+  const [verifySubTab, setVerifySubTab] = useState<'info' | 'compliance' | 'geotrack' | 'fitness'>('info');
+  const [isPhoneCalling, setIsPhoneCalling] = useState(false);
+  const [phoneCallStep, setPhoneCallStep] = useState<0 | 1 | 2 | 3>(0); // 0=idle, 1=dialing, 2=speaking, 3=ended
+  const [simCallResponseText, setSimCallResponseText] = useState('');
+  const [customFitnessDecision, setCustomFitnessDecision] = useState<'fit' | 'light_duty' | 'unfit'>('fit');
+  const [showFitnessReceipt, setShowFitnessReceipt] = useState(false);
+  const [fitnessCommitteeNotes, setFitnessCommitteeNotes] = useState('تقرر عودة المذكور للخدمة العسكرية الكاملة فوراً لتماثله السريري التام للشفاء واستقرار حالته الصحية.');
   
   // Interactive Simulation states
   const [simDiagIndex, setSimDiagIndex] = useState(0);
   const [simProposedDays, setSimProposedDays] = useState(30);
 
   // Modal active state for launcher icons
-  const [activeModalId, setActiveModalId] = useState<'verify' | 'simulator' | 'alarms' | 'calculator' | 'guide' | 'analytics' | 'add-record' | null>(null);
+  const [activeModalId, setActiveModalId] = useState<'verify' | 'simulator' | 'alarms' | 'calculator' | 'guide' | 'analytics' | 'add-record' | 'referrals' | 'reassignment' | 'campaign' | 'monthly-tracker' | 'ai-bulk' | null>(null);
+
+  // --- Monthly Sick Leave Tracker States ---
+  const [trackerYear, setTrackerYear] = useState<number>(() => new Date().getFullYear());
+  const [trackerMonth, setTrackerMonth] = useState<number>(() => new Date().getMonth() + 1);
+  const [trackerLeaveType, setTrackerLeaveType] = useState<'all' | 'مريض' | 'مرافق' | 'مرض قريب' | 'حادث'>('all');
+
+  // --- New Professional Tools States ---
+  // Referral Portal
+  const [referralSoldierId, setReferralSoldierId] = useState<string>('custom');
+  const [referralCustomName, setReferralCustomName] = useState('');
+  const [referralCustomRank, setReferralCustomRank] = useState('جندي');
+  const [referralCustomUnit, setReferralCustomUnit] = useState('الكتيبة الأولى');
+  const [referralHospital, setReferralHospital] = useState('مستشفى باصهيب العسكري - عدن');
+  const [referralReason, setReferralReason] = useState('مراجعة أخصائي جراحة عظام وإجراء رنين مغناطيسي للركبة');
+  const [referralNotes, setReferralNotes] = useState('');
+  const [referralSearchQuery, setReferralSearchQuery] = useState('');
+  const [recentReferrals, setRecentReferrals] = useState<{
+    id: string;
+    name: string;
+    rank: string;
+    unit: string;
+    hospital: string;
+    reason: string;
+    date: string;
+  }[]>(() => {
+    const saved = localStorage.getItem('military_recent_referrals');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    const initial = [
+      {
+        id: 'REF-43-1001',
+        name: 'عماد عبد القوي صالح اليافعي',
+        rank: 'مساعد أول',
+        unit: 'الكتيبة الثانية',
+        hospital: 'مستشفى باصهيب العسكري - عدن',
+        reason: 'إجراء أشعة رنين مغناطيسي وتخطيط أعصاب طرفية للرجل اليسرى',
+        date: '2026-07-04'
+      },
+      {
+        id: 'REF-43-1002',
+        name: 'سالم علي مسعد الحارثي',
+        rank: 'رقيب ثان',
+        unit: 'كتيبة الإمداد والتموين',
+        hospital: 'مستشفى الجمهورية التعليمي - عدن',
+        reason: 'متابعة أخصائي المسالك وجراحة الفتاق الجراحي المناظيري',
+        date: '2026-07-06'
+      }
+    ];
+    localStorage.setItem('military_recent_referrals', JSON.stringify(initial));
+    return initial;
+  });
+  const [activeReferralPrint, setActiveReferralPrint] = useState<any>(null);
+
+  // Reassignment Protocol
+  const [reassignSoldierId, setReassignSoldierId] = useState<string>('');
+  const [reassignDuty, setReassignDuty] = useState('حراسة داخلية ورقابة بوابات المقر العسكري');
+  const [reassignDuration, setReassignDuration] = useState(30);
+  const [reassignNotes, setReassignNotes] = useState('');
+  const [recentReassignments, setRecentReassignments] = useState<{
+    id: string;
+    name: string;
+    rank: string;
+    unit: string;
+    duty: string;
+    duration: number;
+    notes: string;
+    date: string;
+  }[]>(() => {
+    const saved = localStorage.getItem('military_recent_reassignments');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    const initial = [
+      {
+        id: 'RE-43-5001',
+        name: 'وضاح صالح محسن الصبيحي',
+        rank: 'رقيب أول',
+        unit: 'الكتيبة الأولى',
+        duty: 'أعمال إدارية وتنظيمية بالشعبة الطبية وصرف مخزون الأدوية',
+        duration: 45,
+        notes: 'بسبب نقاهة كسر الفخذ، يمنع من الخدمة الميدانية العنيفة والمسافات الطويلة.',
+        date: '2026-07-03'
+      }
+    ];
+    localStorage.setItem('military_recent_reassignments', JSON.stringify(initial));
+    return initial;
+  });
+  const [activeReassignPrint, setActiveReassignPrint] = useState<any>(null);
+
+  // Campaign Supply Forecasting
+  const [campaignForceSize, setCampaignForceSize] = useState(150);
+  const [campaignDays, setCampaignDays] = useState(10);
+  const [campaignIntensity, setCampaignIntensity] = useState<'low' | 'medium' | 'high'>('medium');
+  const [campaignNotes, setCampaignNotes] = useState('حملة تمشيط وتأمين الصحراء الشرقية المتاخمة للساحل');
+  const [showCampaignReport, setShowCampaignReport] = useState(false);
 
   // New Features: Tactical global search and rotating clinical operational ticker
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
@@ -318,6 +448,88 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
     }, 800);
   };
 
+  // --- New Handlers for Advanced Verification Portal ---
+  const startSimulatedCall = (record: LeaveRecord) => {
+    if (!record) return;
+    setIsPhoneCalling(true);
+    setPhoneCallStep(1); // Dialing
+    let responseText = '';
+    
+    const status = record.contactStatus || 'pending';
+    if (status === 'confirmed') {
+      responseText = "أهلاً يا فندم! نعم، والحمد لله صحتي ممتازة واستكملت برنامج العلاج الطبيعي الموصوف بنجاح. سألتحق غداً صباحاً بالكتيبة ومستعد لتأدية أي مهام عسكرية ميدانية بكل فخر.";
+    } else if (status === 'request_extension') {
+      responseText = "مرحباً بكم يا فندم في الشعبة الطبية لللواء 43. الحقيقة أنني ما زلت أشعر بآلام مستمرة في موضع الكسر والركبة، ولم أستطع تحريكها بحرية تامة بعد. الطبيب يرى أنني أحتاج تمديد الإجازة الاستشفائية أسبوعين إضافيين للتعافي التام.";
+    } else if (status === 'evading') {
+      responseText = "«الهاتف المطلوب مغلق حالياً أو قد يكون خارج نطاق التغطية... الرجاء المحاولة لاحقاً» (ملاحظة عسكرية: تم رصد إغلاق الهاتف عمداً وتوثيقه كحالة تهرب عسكري ميداني).";
+    } else if (status === 'no_answer') {
+      responseText = "«جاري الاتصال بالفرد... يرن الآن... طوط... طوط... لم يتم الرد على الاتصال» (تم توثيق محاولة رصد الاتصال في السجل القياسي بنجاح).";
+    } else {
+      responseText = "أهلاً يا فندم، أنا ملتزم تماماً بالراحة الطبية والمنزلية والبروتوكول الموصوف لي من الأطباء، وبانتظار موعد اللجنة الطبية القادم لإجراء الفحص والتحقق من التئام الكسر التام.";
+    }
+    
+    setSimCallResponseText(responseText);
+    
+    setTimeout(() => {
+      if (status === 'evading' || status === 'no_answer') {
+        setPhoneCallStep(3); // ended/failed
+      } else {
+        setPhoneCallStep(2); // speaking
+      }
+    }, 2000);
+  };
+
+  const handleCustomFitnessSubmit = async () => {
+    if (!selectedVerifiedRecord || !onUpdate) return;
+    
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+    
+    let decisionText = '';
+    let statusText = selectedVerifiedRecord.contactStatus;
+    
+    if (customFitnessDecision === 'fit') {
+      decisionText = 'إقرار اللياقة الطبية العسكرية الكاملة والعودة للكتيبة';
+      statusText = 'confirmed';
+    } else if (customFitnessDecision === 'light_duty') {
+      decisionText = 'إقرار اللياقة البدنية الخفيفة لمهام إدارية ومكتبية فقط واستثناء مؤقت من المهام القتالية';
+      statusText = 'confirmed';
+    } else {
+      decisionText = 'عدم اكتمال الشفاء السريري والاستمرار في التوصية بالراحة الطبية الاستشفائية المبررة';
+      statusText = 'request_extension';
+    }
+    
+    const updatedRecord: LeaveRecord = {
+      ...selectedVerifiedRecord,
+      contactStatus: statusText as any,
+      history: [
+        ...(selectedVerifiedRecord.history || []),
+        {
+          date: dateStr,
+          action: 'تعديل',
+          details: `تمت مراجعة الحالة الطبية عبر بوابة التحقق السريع من قبل الشؤون الطبية لللواء 43. القرار: ${decisionText}. الملاحظات: ${fitnessCommitteeNotes}`
+        }
+      ],
+      contactLogs: [
+        ...(selectedVerifiedRecord.contactLogs || []),
+        {
+          date: dateStr.split(' ')[0],
+          status: statusText || 'pending',
+          note: `المثول الطبي والتحقق السريع: ${decisionText}. الملاحظات: ${fitnessCommitteeNotes}`
+        }
+      ]
+    };
+    
+    try {
+      await onUpdate(updatedRecord);
+      setShowFitnessReceipt(true);
+      if (triggerToast) triggerToast('تم تسجيل وإصدار إقرار اللياقة الطبية بنجاح', 'success');
+    } catch (err) {
+      console.error(err);
+      if (triggerToast) triggerToast('فشل حفظ إقرار اللياقة الطبية', 'error');
+    }
+  };
+
   // 1. Calculations for Core Metrics
   const totalLeaves = records.length;
 
@@ -463,6 +675,103 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
       day: 'numeric'
     });
   };
+
+  // --- Monthly Sick Leave Tracker Logic ---
+  const parseYYYYMMDD = (str: string) => {
+    const parts = str.split('-');
+    if (parts.length !== 3) return new Date();
+    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  };
+
+  const getDaysInMonthForRecord = (record: LeaveRecord, year: number, month: number) => {
+    const recordStart = parseYYYYMMDD(record.startDate);
+    const recordEnd = parseYYYYMMDD(record.endDate);
+
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0); // last day of month
+
+    if (recordEnd < monthStart || recordStart > monthEnd) {
+      return 0;
+    }
+
+    const overlapStart = recordStart < monthStart ? monthStart : recordStart;
+    const overlapEnd = recordEnd > monthEnd ? monthEnd : recordEnd;
+
+    const diffTime = overlapEnd.getTime() - overlapStart.getTime();
+    const diffDays = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24))) + 1;
+    return diffDays;
+  };
+
+  const monthlyOverlappingStats = useMemo(() => {
+    const months = [
+      { num: 1, name: 'يناير' },
+      { num: 2, name: 'فبراير' },
+      { num: 3, name: 'مارس' },
+      { num: 4, name: 'أبريل' },
+      { num: 5, name: 'مايو' },
+      { num: 6, name: 'يونيو' },
+      { num: 7, name: 'يوليو' },
+      { num: 8, name: 'أغسطس' },
+      { num: 9, name: 'سبتمبر' },
+      { num: 10, name: 'أكتوبر' },
+      { num: 11, name: 'نوفمبر' },
+      { num: 12, name: 'ديسمبر' },
+    ];
+
+    return months.map((m) => {
+      let totalOverlappingDays = 0;
+      let activeRecordsCount = 0;
+
+      records.forEach((r) => {
+        if (trackerLeaveType === 'all' || r.type === trackerLeaveType) {
+          const overlap = getDaysInMonthForRecord(r, trackerYear, m.num);
+          if (overlap > 0) {
+            totalOverlappingDays += overlap;
+            activeRecordsCount++;
+          }
+        }
+      });
+
+      return {
+        monthNum: m.num,
+        monthName: m.name,
+        totalDays: totalOverlappingDays,
+        casesCount: activeRecordsCount,
+      };
+    });
+  }, [records, trackerYear, trackerLeaveType]);
+
+  const selectedMonthDetails = useMemo(() => {
+    const matchingRecords = records
+      .filter((r) => trackerLeaveType === 'all' || r.type === trackerLeaveType)
+      .map((r) => {
+        const overlapDays = getDaysInMonthForRecord(r, trackerYear, trackerMonth);
+        
+        const rStart = parseYYYYMMDD(r.startDate);
+        const rEnd = parseYYYYMMDD(r.endDate);
+        const totalLeaveDuration = Math.max(1, Math.round((rEnd.getTime() - rStart.getTime()) / (1000 * 60 * 60 * 24))) + 1;
+
+        return {
+          record: r,
+          overlapDays,
+          totalLeaveDuration,
+        };
+      })
+      .filter((item) => item.overlapDays > 0);
+
+    const totalSickDays = matchingRecords.reduce((sum, item) => sum + item.overlapDays, 0);
+    const totalCases = matchingRecords.length;
+    const avgSickDays = totalCases > 0 ? (totalSickDays / totalCases).toFixed(1) : '0';
+    const maxSickDays = totalCases > 0 ? Math.max(...matchingRecords.map((item) => item.overlapDays)) : 0;
+
+    return {
+      matchingRecords,
+      totalSickDays,
+      totalCases,
+      avgSickDays,
+      maxSickDays,
+    };
+  }, [records, trackerYear, trackerMonth, trackerLeaveType]);
 
   // 5. Unit breakdown stats
   const unitBreakdown = useMemo(() => {
@@ -639,22 +948,25 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
 
         {/* Responsive App Launcher Grid */}
         <div className="w-full max-w-2xl grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-y-6 gap-x-3 sm:gap-x-6 md:gap-x-8 justify-items-center">
-          {/* Item 1: Verification */}
+          {/* Item 1: AI Bulk Leave Registration */}
           <motion.div
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setActiveModalId('verify')}
+            onClick={() => {
+              setActiveModalId('ai-bulk');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             className="flex flex-col items-center gap-2 cursor-pointer w-full text-center group"
           >
-            <div className="aspect-square w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-[24%] bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center shadow-md group-hover:shadow-indigo-500/20 transition-all relative">
-              <UserCheck className="w-7 h-7 sm:w-9 sm:h-9 text-white group-hover:scale-110 transition-transform duration-200" />
-              <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse" />
+            <div className="aspect-square w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-[24%] bg-gradient-to-tr from-violet-500 to-indigo-650 flex items-center justify-center shadow-md group-hover:shadow-violet-500/20 transition-all relative">
+              <Sparkles className="w-7 h-7 sm:w-9 sm:h-9 text-white group-hover:scale-110 transition-transform duration-200" />
+              <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-violet-400 rounded-full border-2 border-white dark:border-slate-900 animate-pulse" />
             </div>
             <div className="flex flex-col items-center mt-1">
               <span className="text-[10px] sm:text-xs md:text-sm font-black text-slate-800 dark:text-slate-200 tracking-tight leading-tight">
-                التحقق والامتثال
+                التسجيل الجماعي بالذكاء
               </span>
-              <span className="text-[8px] sm:text-[9px] text-emerald-500 font-extrabold mt-0.5 bg-emerald-50 dark:bg-emerald-950/20 px-1.5 py-0.5 rounded">متابعة فورية</span>
+              <span className="text-[8px] sm:text-[9px] text-violet-500 font-extrabold mt-0.5 bg-violet-50 dark:bg-violet-950/20 px-1.5 py-0.5 rounded">معالج ذكي</span>
             </div>
           </motion.div>
 
@@ -1052,37 +1364,35 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
             animate="show"
             className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
           >
-            {/* Gateway 1: Verification & Compliance */}
+            {/* Gateway 1: AI Bulk Leave Registration */}
             <motion.div
               variants={itemVariants}
               whileHover={{ scale: 1.02, translateY: -2 }}
               onClick={() => {
-                setActiveModalId('verify');
+                setActiveModalId('ai-bulk');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className="cursor-pointer bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-sm hover:shadow-md hover:border-indigo-500/30 transition-all text-right flex flex-col justify-between relative overflow-hidden group"
+              className="cursor-pointer bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-sm hover:shadow-md hover:border-violet-500/30 transition-all text-right flex flex-col justify-between relative overflow-hidden group"
             >
-              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-indigo-500 to-purple-500 opacity-80" />
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-violet-500 via-indigo-500 to-purple-500 opacity-80" />
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className={`text-[9px] font-black px-2 py-1 rounded-full ${
-                    selectedVerifiedRecordId ? 'bg-indigo-500/10 text-indigo-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
-                  }`}>
-                    {selectedVerifiedRecordId ? 'ملف نشط قيد المتابعة' : 'بوابة جاهزة للاستعلام'}
+                  <span className="text-[9px] font-black px-2 py-1 rounded-full bg-violet-500/10 text-violet-500">
+                    معالج الذكاء الاصطناعي الذكي
                   </span>
-                  <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 rounded-xl group-hover:scale-110 transition-transform">
-                    <UserCheck className="w-5 h-5" />
+                  <div className="p-2.5 bg-violet-50 dark:bg-violet-950/30 text-violet-500 rounded-xl group-hover:scale-110 transition-transform">
+                    <Sparkles className="w-5 h-5 text-violet-500" />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">بوابة التحقق السريع والامتثال</h4>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">بوابة التسجيل الجماعي الذكي بالذكاء الاصطناعي</h4>
                   <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
-                    البحث السريع عن الأفراد بالاسم أو الرقم العسكري، والتحقق الفوري من حالة الامتثال وتحديث المتابعة.
+                    إدخال نصوص وتقارير متنوعة ليرتبها الذكاء الاصطناعي ويصنف الأسماء والإجازات تلقائياً تمهيداً لمراجعتها واعتمادها دفعة واحدة.
                   </p>
                 </div>
               </div>
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/40 mt-4 flex justify-between items-center text-[10px] text-indigo-500 font-bold">
-                <span>انقر لفتح البوابة</span>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/40 mt-4 flex justify-between items-center text-[10px] text-violet-600 dark:text-violet-400 font-bold">
+                <span>انقر لفتح المعالج</span>
                 <span className="font-sans">←</span>
               </div>
             </motion.div>
@@ -1428,6 +1738,140 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
                 <span className="font-sans">←</span>
               </div>
             </motion.div>
+
+            {/* Gateway 12: Hospital Referrals Portal */}
+            <motion.div
+              variants={itemVariants}
+              whileHover={{ scale: 1.02, translateY: -2 }}
+              onClick={() => {
+                setActiveModalId('referrals');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="cursor-pointer bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-sm hover:shadow-md hover:border-blue-500/30 transition-all text-right flex flex-col justify-between relative overflow-hidden group"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-blue-600 via-indigo-600 to-sky-500 opacity-80" />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black px-2 py-1 rounded-full bg-blue-500/10 text-blue-500">
+                    خطابات إحالة رسمية مصدقة
+                  </span>
+                  <div className="p-2.5 bg-blue-50 dark:bg-blue-950/30 text-blue-500 rounded-xl group-hover:scale-110 transition-transform">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">متابع وإحالات المستشفيات العسكرية</h4>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                    إصدار خطابات إحالة رسمية للمستشفيات التخصصية، ومتابعة الفحوصات الخارجية والتقارير الطبية المصدقة.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/40 mt-4 flex justify-between items-center text-[10px] text-blue-600 dark:text-blue-400 font-bold">
+                <span>انقر لفتح البوابة</span>
+                <span className="font-sans">←</span>
+              </div>
+            </motion.div>
+
+            {/* Gateway 13: Light-Duty Assignment Protocol */}
+            <motion.div
+              variants={itemVariants}
+              whileHover={{ scale: 1.02, translateY: -2 }}
+              onClick={() => {
+                setActiveModalId('reassignment');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="cursor-pointer bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-sm hover:shadow-md hover:border-amber-500/30 transition-all text-right flex flex-col justify-between relative overflow-hidden group"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-amber-500 via-orange-500 to-yellow-500 opacity-80" />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black px-2 py-1 rounded-full bg-amber-500/10 text-amber-500">
+                    توصيات التكيف والجاهزية
+                  </span>
+                  <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 text-amber-500 rounded-xl group-hover:scale-110 transition-transform">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">بروتوكول التكليف بالمهام البديلة</h4>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                    محاكاة مستويات العجز المؤقت، وتعيين الجرحى والمصابين المتعافين جزئياً في مهام حراسة وإدارة خفيفة ملائمة.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/40 mt-4 flex justify-between items-center text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                <span>انقر لفتح البوابة</span>
+                <span className="font-sans">←</span>
+              </div>
+            </motion.div>
+
+            {/* Gateway 14: Campaign Supply Forecasting */}
+            <motion.div
+              variants={itemVariants}
+              whileHover={{ scale: 1.02, translateY: -2 }}
+              onClick={() => {
+                setActiveModalId('campaign');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="cursor-pointer bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-sm hover:shadow-md hover:border-emerald-500/30 transition-all text-right flex flex-col justify-between relative overflow-hidden group"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-emerald-500 via-teal-500 to-indigo-600 opacity-80" />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500">
+                    اللوجستيات الطبية للجبهة
+                  </span>
+                  <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500 rounded-xl group-hover:scale-110 transition-transform">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">مخطط التموين اللوجستي والعمليات</h4>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                    حساب وتوقع الاستهلاك الدوائي والمستلزمات الطبية في المهام العسكرية الميدانية بناء على قوام القوة وشدة الاشتباك.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/40 mt-4 flex justify-between items-center text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                <span>انقر لفتح البوابة</span>
+                <span className="font-sans">←</span>
+              </div>
+            </motion.div>
+
+            {/* Gateway 15: Monthly Sick Leave Days Tracker */}
+            <motion.div
+              variants={itemVariants}
+              whileHover={{ scale: 1.02, translateY: -2 }}
+              onClick={() => {
+                setActiveModalId('monthly-tracker');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="cursor-pointer bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-sm hover:shadow-md hover:border-pink-500/30 transition-all text-right flex flex-col justify-between relative overflow-hidden group"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-pink-500 via-rose-500 to-indigo-500 opacity-80" />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black px-2 py-1 rounded-full bg-pink-500/10 text-pink-500">
+                    متابعة الإحصائيات الشهرية
+                  </span>
+                  <div className="p-2.5 bg-pink-50 dark:bg-pink-950/30 text-pink-500 rounded-xl group-hover:scale-110 transition-transform">
+                    <CalendarDays className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">متابع الإجازات المرضية الشهرية</h4>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                    عرض إجمالي أيام الإجازات المرضية المرفوعة في أي شهر محدد، مع اختيار وتصفح الإحصائيات التفصيلية لكل شهر.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/40 mt-4 flex justify-between items-center text-[10px] text-pink-600 dark:text-pink-400 font-bold">
+                <span>انقر لفتح البوابة</span>
+                <span className="font-sans">←</span>
+              </div>
+            </motion.div>
+
+
           </motion.div>
 
           {/* Security / System Tip & Information Card */}
@@ -1443,185 +1887,76 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
                 </p>
               </div>
             </div>
-            <span className="text-[9px] text-slate-400 shrink-0 bg-slate-200/50 dark:bg-slate-800/50 px-2 py-1 rounded font-mono">
-              يرجى تصدير نسخة احتياطية من "أدوات النظام" دورياً
+            <span className="text-[9px] text-slate-405 shrink-0 bg-slate-200/50 dark:bg-slate-800/50 px-2 py-1 rounded font-mono">
+              يرجى تصدير نسخة احتياطية من البيانات دورياً للحفاظ على سلامة الأرشيف الرقمي.
             </span>
           </div>
         </div>
       )}
 
-      {/* Active Sub-panel Header (visible when activeModalId !== null) */}
-      {activeModalId && (
-        <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-200 dark:border-slate-850 animate-fadeIn text-right mb-4 gap-3">
-          <button
-            onClick={() => {
-              setActiveModalId(null);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
-          >
-            <span>← العودة للوحة التشغيل الرئيسية</span>
-          </button>
-          <div className="text-right">
-            <h4 className="font-bold text-slate-900 dark:text-white text-xs">البوابة النشطة حالياً</h4>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-              {activeModalId === 'verify' && 'بوابة التحقق الفوري والمتابعة السريعة للامتثال الميداني للأفراد'}
-              {activeModalId === 'simulator' && 'المستشار الطبي التفاعلي واتخاذ القرار وتوصيات القيادة'}
-              {activeModalId === 'alarms' && 'مركز الإنذار ومتابعة عودة القوة العاجلة وقوام اللواء'}
-              {activeModalId === 'calculator' && 'حاسبة التواريخ الطبية وتاريخ انتهاء الإجازات بدقة'}
-              {activeModalId === 'guide' && 'دليل معايير الاستشفاء وبروتوكولات اللجان الطبية المعتمدة'}
-              {activeModalId === 'analytics' && 'المؤشرات والتحليلات الرسوم البيانية ونسب غياب الكتائب'}
-              {activeModalId === 'add-record' && 'بوابة تسجيل وإضافة إجازة مرضية عسكرية جديدة في قاعدة البيانات'}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* 48-Hour Urgent Expiration Alerts Panel */}
-      {activeModalId === 'alarms' && (
-        <motion.div
-          variants={itemVariants}
-          className="bg-white dark:bg-slate-900 rounded-2xl border border-red-200 dark:border-rose-950/60 p-5 shadow-sm text-right space-y-4 overflow-hidden relative"
-        >
-        {/* Subtle top-glow accent line */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-l from-rose-500 via-amber-500 to-rose-500" />
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-rose-50 dark:bg-rose-950/40 text-rose-500 rounded-xl animate-pulse">
-              <Bell className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                <span>تنبيهات الشؤون الطبية العاجلة (انتهاء الإجازة خلال 48 ساعة)</span>
-                {urgentExpirations.length > 0 && (
-                  <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce" style={{ backgroundColor: '#ef4444' }}>
-                    {urgentExpirations.length} تنبيه نشط
-                  </span>
-                )}
-              </h3>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
-                كشف استباقي للأفراد الذين تنتهي إجازاتهم المرضية خلال الـ 48 ساعة القادمة للمتابعة الهاتفية وضمان عودتهم الميدانية المباشرة.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {urgentExpirations.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {urgentExpirations.map((r, index) => {
-              const isEndingToday = r.daysRemaining === 0;
-              const isEndingTomorrow = r.daysRemaining === 1;
-              const isEndingDayAfter = r.daysRemaining === 2;
-
-              let statusText = '';
-              let badgeStyle = '';
-              if (isEndingToday) {
-                statusText = 'ينتهي اليوم (عاجل جداً) 🚨';
-                badgeStyle = 'bg-rose-500 text-white animate-pulse border-rose-600';
-              } else if (isEndingTomorrow) {
-                statusText = 'تنتهي غداً (خلال 24 ساعة) ⏳';
-                badgeStyle = 'bg-amber-500 text-slate-950 font-black border-amber-600';
-              } else if (isEndingDayAfter) {
-                statusText = 'تنتهي بعد غد (خلال 48 ساعة) 📅';
-                badgeStyle = 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/30 font-bold';
-              }
-
-              return (
-                <div
-                  key={index}
-                  className="p-4 rounded-xl border border-slate-150 dark:border-slate-800 bg-slate-50/50 hover:bg-slate-50 dark:bg-slate-950/40 dark:hover:bg-slate-950/70 transition-all flex flex-col justify-between space-y-3 relative overflow-hidden text-right"
-                >
-                  {/* Left sidebar indicator */}
-                  <div className={`absolute top-0 bottom-0 left-0 w-1 ${
-                    isEndingToday ? 'bg-rose-500' : isEndingTomorrow ? 'bg-amber-500' : 'bg-indigo-500'
-                  }`} />
-                  
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-start">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold border ${badgeStyle}`}>
-                        {statusText}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-mono">#{index + 1}</span>
-                    </div>
-
-                    <div className="font-bold text-slate-850 dark:text-white text-xs pt-1">
-                      {r.rank} / {r.name}
-                    </div>
-
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400 space-y-0.5">
-                      <div>الوحدة: <span className="font-bold text-slate-700 dark:text-slate-300">{r.unit || 'اللواء 43 عمالقة'}</span></div>
-                      <div>التشخيص الطبي: <span className="font-bold text-slate-700 dark:text-slate-300">{r.diagnosis}</span></div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center text-[10px]">
-                    <span className="text-slate-400">تاريخ انتهاء الإجازة:</span>
-                    <span className="font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-850 px-2 py-0.5 rounded">
-                      {r.endDate}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="py-8 text-center text-xs text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-dashed border-emerald-500/30 flex flex-col items-center justify-center gap-2">
-            <CheckCircle2 className="w-8 h-8 text-emerald-500" />
-            <span className="font-black text-emerald-600 dark:text-emerald-400 text-[13px]">قوة اللواء جاهزة ومكتملة</span>
-            <span className="text-[11px] text-slate-400">لا توجد أي إجازات مرضية تنتهي خلال الـ 48 ساعة القادمة. جميع الأفراد ملتزمون بالعودة والجاهزية.</span>
-          </div>
-        )}
-      </motion.div>
-      )}
-      {/* Panel A: Interactive Quick ID/Name Medical Verification Portal */}
-      {activeModalId === 'verify' && (
+          {/* Panel A: Interactive Quick ID/Name Medical Verification Portal */}
+          {activeModalId === 'verify' && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800/80 p-5 md:p-6 shadow-md text-right flex flex-col justify-between relative overflow-hidden max-w-4xl mx-auto w-full">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-l from-indigo-500 to-purple-500" />
           
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 rounded-xl">
-                <Search className="w-5 h-5" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 rounded-xl">
+                  <UserCheck className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 dark:text-white text-sm">
+                    بوابة التحقق الفوري والمتابعة السريعة للأفراد (v3.0.0)
+                  </h3>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
+                    النظام القياسي الموحد لتعقب الامتثال الطبي والاستشفاء الميداني لمنتسبي اللواء 43 عمالقة.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
-                  بوابة التحقق الفوري والمتابعة السريعة (v2.0.0)
-                </h3>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
-                  ابحث عن أي فرد بالاسم أو الرتبة أو الرقم للتحقق من امتثاله وتحديث حالة التواصل الميداني فوراً.
-                </p>
-              </div>
+              
+              {selectedVerifiedRecord && (
+                <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black px-2.5 py-1 rounded-full border border-emerald-500/25 animate-pulse">
+                  رصد عملياتي مباشر
+                </span>
+              )}
             </div>
 
             {/* Search Input and Suggestions */}
-            <div className="relative my-4">
+            <div className="relative mb-5">
               <input
                 type="text"
-                placeholder="اكتب اسم الجندي أو رتبته للاستعلام السريع..."
+                placeholder="اكتب اسم الجندي، رتبته، أو الرقم العسكري للاستعلام الفوري..."
                 value={verificationQuery}
                 onChange={(e) => {
                   setVerificationQuery(e.target.value);
-                  if (!e.target.value) setSelectedVerifiedRecordId('');
+                  if (!e.target.value) {
+                    setSelectedVerifiedRecordId('');
+                    setVerifySubTab('info');
+                  }
                 }}
-                className="w-full pl-3 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-850 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-right placeholder-slate-400"
+                className="w-full pl-3 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-850 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-right placeholder-slate-400 transition-all"
               />
               <Search className="w-4 h-4 text-slate-400 absolute top-3.5 right-3" />
 
               {/* Suggestions Dropdown */}
               {suggestedRecords.length > 0 && !selectedVerifiedRecordId && (
-                <div className="absolute z-20 left-0 right-0 mt-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-xl shadow-lg max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                <div className="absolute z-30 left-0 right-0 mt-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-xl shadow-lg max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
                   {suggestedRecords.map((r) => (
                     <button
                       key={r.id}
                       onClick={() => {
                         setSelectedVerifiedRecordId(r.id);
                         setVerificationQuery(r.name);
+                        setVerifySubTab('info');
                       }}
-                      className="w-full text-right px-4 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/50 flex justify-between items-center transition-colors font-bold"
+                      className="w-full text-right px-4 py-2.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/50 flex justify-between items-center transition-colors font-bold"
                     >
                       <span className="text-slate-850 dark:text-slate-200">{r.rank} / {r.name}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">#{r.id.substring(4, 9)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] bg-indigo-500/10 text-indigo-500 px-1.5 py-0.2 rounded font-sans">{r.unit}</span>
+                        <span className="text-[9px] text-slate-400 font-mono">#{r.id.substring(4, 9)}</span>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -1630,520 +1965,808 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
 
             {/* Profile Info & Action Card */}
             {selectedVerifiedRecord ? (
-              <div className="p-4 bg-slate-50/50 dark:bg-slate-950/40 rounded-xl border border-slate-150 dark:border-slate-850 space-y-3.5">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-black text-xs text-slate-900 dark:text-white">
-                      {selectedVerifiedRecord.rank} / {selectedVerifiedRecord.name}
-                    </h4>
-                    <span className="text-[9px] text-slate-400 font-mono block mt-0.5">
-                      الرقم العسكري: Mil-43-{selectedVerifiedRecord.id.substring(4, 9).toUpperCase()}
-                    </span>
-                  </div>
+              <div className="space-y-4">
+                {/* Internal sub-tabs navigation */}
+                <div className="flex border-b border-slate-150 dark:border-slate-850 pb-px text-right justify-start gap-1 overflow-x-auto select-none">
+                  {[
+                    { id: 'info', label: 'الملف والمتابعة 📋' },
+                    { id: 'compliance', label: 'الالتزام والشفاء 📊' },
+                    { id: 'geotrack', label: 'التموضع والرادار 📡' },
+                    { id: 'fitness', label: 'إقرار اللياقة والالتحاق 📜' }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setVerifySubTab(tab.id as any)}
+                      className={`px-3.5 py-2 text-[11px] font-black transition-all border-b-2 whitespace-nowrap cursor-pointer ${
+                        verifySubTab === tab.id
+                          ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-black'
+                          : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
 
-                  {/* Status Badge */}
-                  {(() => {
-                    const today = new Date(todayStr);
-                    const start = new Date(selectedVerifiedRecord.startDate);
-                    const end = new Date(selectedVerifiedRecord.endDate);
-                    let badgeColor = '';
-                    let label = '';
-                    let daysText = '';
+                {/* Sub Tab Content 1: Main Info & Actions */}
+                {verifySubTab === 'info' && (
+                  <div className="space-y-4 animate-fadeIn">
+                    <div className="p-4 bg-slate-50/50 dark:bg-slate-950/40 rounded-2xl border border-slate-150 dark:border-slate-850 space-y-3.5">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div>
+                          <h4 className="font-black text-xs text-slate-900 dark:text-white">
+                            {selectedVerifiedRecord.rank} / {selectedVerifiedRecord.name}
+                          </h4>
+                          <span className="text-[9px] text-slate-400 font-mono block mt-0.5">
+                            الرقم العسكري: Mil-43-{selectedVerifiedRecord.id.substring(4, 9).toUpperCase()} | الكتيبة: {selectedVerifiedRecord.unit || 'اللواء 43 عمالقة'}
+                          </span>
+                        </div>
 
-                    if (today < start) {
-                      badgeColor = 'bg-indigo-500 text-white';
-                      label = 'إجازة مستقبلية';
-                      const diff = Math.ceil((start.getTime() - today.getTime()) / (1000*60*60*24));
-                      daysText = `تبدأ خلال ${diff} يوم`;
-                    } else if (today > end) {
-                      badgeColor = 'bg-rose-500 text-white animate-pulse';
-                      label = 'منتهية - يجب العودة';
-                      const diff = Math.ceil((today.getTime() - end.getTime()) / (1000*60*60*24));
-                      daysText = `متأخر منذ ${diff} يوم ⚠️`;
-                    } else {
-                      badgeColor = 'bg-emerald-500 text-white';
-                      label = 'نشطة حالياً';
-                      const diff = Math.ceil((end.getTime() - today.getTime()) / (1000*60*60*24));
-                      daysText = `ينتهي الاستشفاء بعد ${diff} يوم`;
-                    }
+                        {/* Status Badge */}
+                        {(() => {
+                          const today = new Date(todayStr);
+                          const start = new Date(selectedVerifiedRecord.startDate);
+                          const end = new Date(selectedVerifiedRecord.endDate);
+                          let badgeColor = '';
+                          let label = '';
+                          let daysText = '';
 
-                    return (
-                      <div className="text-left shrink-0">
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${badgeColor}`}>
-                          {label}
-                        </span>
-                        <span className="text-[9px] text-slate-400 block mt-0.5 font-mono">
-                          {daysText}
-                        </span>
+                          if (today < start) {
+                            badgeColor = 'bg-indigo-500 text-white';
+                            label = 'إجازة مستقبلية';
+                            const diff = Math.ceil((start.getTime() - today.getTime()) / (1000*60*60*24));
+                            daysText = `تبدأ خلال ${diff} يوم`;
+                          } else if (today > end) {
+                            badgeColor = 'bg-rose-500 text-white animate-pulse';
+                            label = 'منتهية - يجب العودة';
+                            const diff = Math.ceil((today.getTime() - end.getTime()) / (1000*60*60*24));
+                            daysText = `متأخر منذ ${diff} يوم ⚠️`;
+                          } else {
+                            badgeColor = 'bg-emerald-500 text-white';
+                            label = 'نشطة حالياً';
+                            const diff = Math.ceil((end.getTime() - today.getTime()) / (1000*60*60*24));
+                            daysText = `ينتهي الاستشفاء بعد ${diff} يوم`;
+                          }
+
+                          return (
+                            <div className="text-right sm:text-left shrink-0">
+                              <span className={`text-[9px] font-black px-2.5 py-1 rounded-full ${badgeColor}`}>
+                                {label}
+                              </span>
+                              <span className="text-[9px] text-slate-400 block mt-1 font-mono">
+                                {daysText}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
-                    );
-                  })()}
-                </div>
 
-                <div className="grid grid-cols-2 gap-4 text-[11px] pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div>
-                    <span className="text-slate-400 block font-bold mb-0.5">التشخيص الطبي:</span>
-                    <span className="font-black text-slate-800 dark:text-slate-200">{selectedVerifiedRecord.diagnosis}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block font-bold mb-0.5">جهة التقرير:</span>
-                    <span className="font-black text-slate-800 dark:text-slate-200">{selectedVerifiedRecord.issuer}</span>
-                  </div>
-                </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[11px] pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                        <div>
+                          <span className="text-slate-400 block font-bold mb-0.5">التشخيص الطبي الحالي:</span>
+                          <span className="font-black text-slate-800 dark:text-slate-200">{selectedVerifiedRecord.diagnosis}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-bold mb-0.5">الجهة الطبية المانحة:</span>
+                          <span className="font-black text-slate-800 dark:text-slate-200">{selectedVerifiedRecord.issuer}</span>
+                        </div>
+                      </div>
 
-                <div className="grid grid-cols-2 gap-4 text-[11px]">
-                  <div>
-                    <span className="text-slate-400 block font-bold mb-0.5">تاريخ البدء:</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{selectedVerifiedRecord.startDate}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block font-bold mb-0.5">تاريخ الانتهاء:</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{selectedVerifiedRecord.endDate}</span>
-                  </div>
-                </div>
-
-                {/* Instant Contact Status Editor */}
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block">
-                    تعديل حالة التواصل والمتابعة العسكرية المباشرة:
-                  </span>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <select
-                        value={quickContactStatus}
-                        onChange={(e) => setQuickContactStatus(e.target.value as any)}
-                        className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] text-slate-750 dark:text-slate-300 font-bold focus:outline-none"
-                      >
-                        <option value="pending">قيد المتابعة والانتظار</option>
-                        <option value="confirmed">تم تأكيد العودة والالتحاق</option>
-                        <option value="no_answer">لا يرد على الاتصال هاتفياً</option>
-                        <option value="request_extension">طلب تمديد رسمي مع التقرير</option>
-                        <option value="evading">متهرب عسكرياً ومقفل هاتفه</option>
-                      </select>
+                      <div className="grid grid-cols-2 gap-4 text-[11px]">
+                        <div>
+                          <span className="text-slate-400 block font-bold mb-0.5">تاريخ بدء الاستشفاء:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{selectedVerifiedRecord.startDate}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-bold mb-0.5">تاريخ عودة واستئناف الخدمة:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{selectedVerifiedRecord.endDate}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <input
-                        type="text"
-                        placeholder="أدخل ملاحظة المتابعة..."
-                        value={quickContactNote}
-                        onChange={(e) => setQuickContactNote(e.target.value)}
-                        className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none text-right"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleQuickContactSave}
-                    disabled={!onUpdate}
-                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 mt-1"
-                  >
-                    <UserCheck className="w-4 h-4" />
-                    <span>تحديث وحفظ تقرير المتابعة فوراً</span>
-                  </button>
-
-                  {/* Exceptional Military Medical Committee Decisions Panel */}
-                  <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-850 space-y-3 bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-150 dark:border-slate-800 text-right">
-                    <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-extrabold text-[11px]">
-                      <span>🩺</span>
-                      <span>قرارات اللجنة الطبية العسكرية الاستثنائية للواء 43</span>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 block">مدة التمديد الاستثنائي</label>
-                        <select
-                          value={committeeExtDays}
-                          onChange={(e) => setCommitteeExtDays(Number(e.target.value))}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 focus:outline-none"
+                    {/* Quick Call and Broadcast Widgets Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Audio voice call launcher card */}
+                      <div className="p-3 bg-indigo-50/40 dark:bg-indigo-950/10 border border-indigo-500/10 rounded-2xl flex flex-col justify-between space-y-2">
+                        <div className="flex items-center gap-2 justify-start">
+                          <span className="text-lg">📞</span>
+                          <div>
+                            <span className="text-[10px] font-black text-indigo-500 block">الاتصال الميداني المباشر</span>
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 block leading-none">إجراء محادثة صوتية مشفرة</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => startSimulatedCall(selectedVerifiedRecord)}
+                          className="w-full py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black text-[10px] rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                         >
-                          <option value="7">تمديد ٧ أيام (أسبوع)</option>
-                          <option value="15">تمديد ١٥ يوماً (نصف شهر)</option>
-                          <option value="30">تمديد ٣٠ يوماً (شهر كامل)</option>
-                          <option value="45">تمديد ٤٥ يوماً (أقسام عظام)</option>
-                          <option value="60">تمديد ٦٠ يوماً (لجنة مركزية)</option>
-                        </select>
+                          <PhoneCall className="w-3 h-3" />
+                          <span>📞 بدء المكالمة الميدانية الصوتية</span>
+                        </button>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 block">توضيح الدواعي الطبية للطلب</label>
-                        <input
-                          type="text"
-                          placeholder="مثال: استكمال برنامج العلاج الطبيعي للكسر..."
-                          value={committeeNotes}
-                          onChange={(e) => setCommitteeNotes(e.target.value)}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-lg text-[10px] text-slate-700 dark:text-slate-300 focus:outline-none text-right"
-                        />
+                      {/* Satellite Recall dispatch */}
+                      <div className="p-3 bg-cyan-50/40 dark:bg-cyan-950/10 border border-cyan-500/10 rounded-2xl flex flex-col justify-between space-y-2">
+                        <div className="flex items-center gap-2 justify-start">
+                          <span className="text-lg">📡</span>
+                          <div>
+                            <span className="text-[10px] font-black text-cyan-500 block">البث البرقي عبر الأقمار</span>
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 block leading-none">إصدار بلاغ استدعاء فوري</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleRadioRecallBroadcast}
+                          disabled={radioSimulationStep > 0}
+                          className="w-full py-2 bg-gradient-to-r from-cyan-600 to-blue-600 disabled:opacity-50 text-white font-black text-[10px] rounded-xl hover:from-cyan-700 hover:to-blue-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <span>📡 بث نداء عسكري لاسلكي عاجل</span>
+                        </button>
                       </div>
                     </div>
 
-                    <button
-                      onClick={handleCommitteeExtension}
-                      disabled={!onUpdate}
-                      className="w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-[11px] rounded-lg shadow transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span>📜</span>
-                      <span>إقرار التمديد الطبي وإصدار مستند القرار</span>
-                    </button>
-                  </div>
-
-                  {/* Satellite Tactical Direct Broadcast Panel */}
-                  <div className="mt-2.5 pt-2 border-t border-slate-200/50 dark:border-slate-850/50 space-y-2 text-right">
-                    <button
-                      onClick={handleRadioRecallBroadcast}
-                      disabled={radioSimulationStep > 0}
-                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-extrabold text-[10px] rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
-                    >
-                      <span>📡</span>
-                      <span>بث بلاغ استدعاء عسكري لاسلكي عاجل (عبر القمر الصناعي للقطاع)</span>
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => setShowDigitalCard(true)}
-                    className="w-full py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 mt-2"
-                  >
-                    <span>🪪</span>
-                    <span>عرض وإصدار البطاقة الطبية الميدانية الرقمية</span>
-                  </button>
-
-                  {/* Official Military Medical Committee Decision receipt overlay */}
-                  {showCommitteeReceipt && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="fixed inset-0 bg-slate-900/85 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 text-right"
-                    >
-                      <motion.div
-                        initial={{ scale: 0.95, y: 15 }}
-                        animate={{ scale: 1, y: 0 }}
-                        className="bg-white text-slate-900 border-2 border-slate-300 dark:border-slate-850 rounded-3xl p-6 max-w-lg w-full shadow-2xl relative"
-                      >
-                        {/* Yemeni flag top border */}
-                        <div className="absolute top-0 left-0 right-0 h-1.5 flex">
-                          <div className="w-1/3 h-full bg-red-600" />
-                          <div className="w-1/3 h-full bg-white" />
-                          <div className="w-1/3 h-full bg-black" />
-                        </div>
-
-                        {/* Document Header */}
-                        <div className="text-center space-y-1 mb-5 border-b border-slate-200 pb-4 mt-2">
-                          <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider">الجمهورية اليمنية - وزارة الدفاع</h4>
-                          <h3 className="text-xs font-black text-slate-800">ألوية العمالقة - اللواء 43 عمالقة</h3>
-                          <h2 className="text-sm font-black text-indigo-750">اللجنة الطبية العسكرية العليا للقطاع</h2>
-                          <div className="text-[9px] text-slate-400 font-mono mt-1">قرار إداري رقم: Dec-43-{Math.floor(100000 + Math.random() * 900000)}</div>
-                        </div>
-
-                        {/* Official Text of Decree */}
-                        <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-4 font-sans text-xs leading-relaxed text-slate-800">
-                          <div className="flex justify-between items-center border-b border-dashed border-slate-200 pb-2">
-                            <span className="font-bold text-[11px] text-slate-500">موضوع القرار:</span>
-                            <span className="font-black text-[11px] text-amber-600">تمديد إجازة مرضية بقرار استثنائي</span>
-                          </div>
-
-                          <p>
-                            بناءً على الصلاحيات القانونية والإدارية الممنوحة للجنة الطبية العسكرية للواء 43 عمالقة، وبعد مراجعة الحالة السريرية والتقارير الاستشفائية للفرد المذكور أدناه:
-                          </p>
-
-                          <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
-                            <div>الاسم الكامل: <strong className="text-slate-900">{selectedVerifiedRecord.name}</strong></div>
-                            <div className="grid grid-cols-2 gap-2 text-[11px]">
-                              <div>الرتبة: <strong className="text-slate-900">{selectedVerifiedRecord.rank}</strong></div>
-                              <div>الكتيبة/الوحدة: <strong className="text-slate-900">{selectedVerifiedRecord.unit || 'اللواء 43 عمالقة'}</strong></div>
-                            </div>
-                            <div>التشخيص الطبي الحالي: <strong className="text-amber-700">{selectedVerifiedRecord.diagnosis}</strong></div>
-                          </div>
-
-                          <p>
-                            تقرر رسمياً الموافقة على تمديد فترة إجازته المرضية الاستشفائية بقوة <strong className="text-indigo-600">{committeeExtDays} يوماً إضافياً</strong>، تبدأ مباشرة من تاريخ انتهاء إجازته السابقة، ليكون موعد عودته واستئناف مهامه العسكرية والالتحاق بالكتيبة هو:
-                          </p>
-
-                          <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-center">
-                            <span className="text-[10px] text-indigo-500 block">تاريخ عودة الفرد المعتمد والنهائي:</span>
-                            <span className="text-sm font-black text-indigo-700 font-mono">{selectedVerifiedRecord.endDate}</span>
-                          </div>
-
-                          <div className="text-[10px] text-slate-500 italic">
-                            ملاحظة اللجنة: {committeeNotes || 'يلتزم الفرد بتقديم ما يفيد تماثله النهائي للشفاء عند المثول أمام الإدارة الطبية فور انقضاء المدة.'}
-                          </div>
-                        </div>
-
-                        {/* Signatures & Stamps */}
-                        <div className="mt-5 pt-3 flex justify-between items-center text-[10px] border-t border-slate-100">
-                          {/* Approved Stamp */}
-                          <div className="border-2 border-dashed border-indigo-500/40 rounded-xl p-2 transform -rotate-2 bg-indigo-500/5 flex flex-col items-center">
-                            <span className="text-[8px] text-indigo-600 font-black">الشؤون الطبية العسكرية</span>
-                            <span className="text-[9px] text-indigo-700 font-bold">قرارات اللجنة العليا</span>
-                            <span className="text-[6px] font-mono text-indigo-500">{new Date().toLocaleDateString('ar-YE')}</span>
-                          </div>
-
-                          <div className="text-left space-y-1 font-sans">
-                            <div className="font-bold text-slate-850">رئيس اللجنة الطبية بالقطاع:</div>
-                            <div className="font-extrabold text-slate-900 text-[11px]">العقيد د. صالح اليافعي</div>
-                            <div className="text-[8px] text-slate-400">اللواء 43 عمالقة - عدن</div>
-                          </div>
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="mt-6 flex gap-2">
-                          <button
-                            onClick={() => {
-                              window.print();
-                              if (triggerToast) triggerToast('بدء أمر طباعة قرار التمديد الاستثنائي', 'success');
-                            }}
-                            className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-950 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                    {/* Instant Contact Status Editor */}
+                    <div className="pt-3 border-t border-slate-150 dark:border-slate-800 space-y-2.5">
+                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 block">
+                        تحديث حالة التواصل والمتابعة يدوياً:
+                      </span>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <select
+                            value={quickContactStatus}
+                            onChange={(e) => setQuickContactStatus(e.target.value as any)}
+                            className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-lg text-[10px] text-slate-750 dark:text-slate-300 font-bold focus:outline-none"
                           >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>طباعة القرار الإداري</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setShowCommitteeReceipt(false);
-                              setCommitteeNotes('');
-                            }}
-                            className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer font-sans"
-                          >
-                            إغلاق
-                          </button>
-                        </div>
-                      </motion.div>
-                    </motion.div>
-                  )}
-
-                  {/* Satellite Tactical Direct Broadcast Notice Simulator overlay */}
-                  {radioSimulationStep > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[9999] flex items-center justify-center p-4 text-center font-mono"
-                    >
-                      <motion.div
-                        initial={{ scale: 0.95, y: 15 }}
-                        animate={{ scale: 1, y: 0 }}
-                        className="bg-slate-900 border-2 border-cyan-500/30 rounded-3xl p-6 max-w-md w-full shadow-[0_0_25px_rgba(6,182,212,0.15)] relative overflow-hidden"
-                      >
-                        {/* Futuristic scanlines effect */}
-                        <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,38,0)_50%,rgba(6,182,212,0.03)_50%)] bg-[length:100%_4px] pointer-events-none" />
-
-                        {/* Header radar scope */}
-                        <div className="flex flex-col items-center justify-center mb-6 space-y-2 relative">
-                          {radioSimulationStep === 1 && (
-                            <div className="w-16 h-16 rounded-full border border-cyan-500/40 flex items-center justify-center relative overflow-hidden">
-                              <div className="absolute inset-0 bg-cyan-500/10 rounded-full animate-ping" />
-                              <div className="w-3 h-3 bg-cyan-500 rounded-full animate-pulse" />
-                            </div>
-                          )}
-                          {radioSimulationStep === 2 && (
-                            <div className="w-16 h-16 rounded-full border-2 border-indigo-500/40 flex items-center justify-center relative overflow-hidden bg-indigo-950/20">
-                              <div className="w-8 h-8 rounded-full border-2 border-dashed border-indigo-400 animate-spin" />
-                            </div>
-                          )}
-                          {radioSimulationStep === 3 && (
-                            <div className="w-16 h-16 rounded-full border-2 border-emerald-500 flex items-center justify-center bg-emerald-950/30">
-                              <span className="text-2xl">✅</span>
-                            </div>
-                          )}
-
-                          <div className="text-center">
-                            <h3 className="text-cyan-400 text-xs font-black tracking-widest uppercase">G43 MILITARY SATELLITE BROADCAST SYSTEM</h3>
-                            <h4 className="text-[10px] text-slate-500">اللواء 43 عمالقة - نظام الاتصال الميداني الموحد</h4>
-                          </div>
+                            <option value="pending">قيد المتابعة والانتظار</option>
+                            <option value="confirmed">تم تأكيد العودة والالتحاق</option>
+                            <option value="no_answer">لا يرد على الاتصال هاتفياً</option>
+                            <option value="request_extension">طلب تمديد رسمي مع التقرير</option>
+                            <option value="evading">متهرب عسكرياً ومقفل هاتفياً</option>
+                          </select>
                         </div>
 
-                        {/* Interactive dynamic logs */}
-                        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-right space-y-2.5 text-[11px] text-cyan-300">
-                          {radioSimulationStep === 1 && (
-                            <div className="space-y-1 font-mono leading-relaxed">
-                              <p className="text-slate-400 animate-pulse">&gt; scanning military satellite transponders...</p>
-                              <p className="text-slate-400">&gt; lock established on B-MANDAB SATELLITE SECTOR 4</p>
-                              <p className="text-slate-400">&gt; secure encryption protocol initialized (AES-256-MIL)...</p>
-                            </div>
-                          )}
-
-                          {radioSimulationStep === 2 && (
-                            <div className="space-y-1 font-mono leading-relaxed">
-                              <p className="text-slate-500">&gt; lock established on SATELLITE SECTOR 4</p>
-                              <p className="text-amber-400">&gt; generating secure recall dispatch telegram...</p>
-                              <p className="text-indigo-400 font-bold">&gt; RECIPIENT: {selectedVerifiedRecord.rank} / {selectedVerifiedRecord.name}</p>
-                              <p className="text-indigo-400 font-bold">&gt; UNIT: {selectedVerifiedRecord.unit || 'اللواء 43 عمالقة'}</p>
-                              <p className="text-cyan-400 animate-pulse">&gt; broadcasting telemetry packages on FREQ: 154.250 MHz...</p>
-                            </div>
-                          )}
-
-                          {radioSimulationStep === 3 && (
-                            <div className="space-y-1.5 font-sans leading-relaxed text-slate-200">
-                              <div className="text-center font-bold text-[12px] text-emerald-400 mb-2 border-b border-emerald-500/20 pb-1.5">📡 تم البث وتلقي الاستلام بنجاح!</div>
-                              <p className="text-[11px]">
-                                تم إرسال البلاغ العسكري المشفر <strong className="text-cyan-400">G43-{Math.floor(1000 + Math.random()*9000)}</strong> إلى الفرد لتأكيد العودة واستئناف مهام الخدمة والالتحاق بالمعسكر فوراً.
-                              </p>
-                              <p className="text-[10px] text-slate-500">
-                                تم تسجيل هذا الإجراء تلقائياً في السجل التاريخي للفرد لضمان الانضباط العسكري التام والمتابعة الميدانية الصارمة.
-                              </p>
-                            </div>
-                          )}
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            placeholder="أدخل ملاحظة المتابعة السريعة..."
+                            value={quickContactNote}
+                            onChange={(e) => setQuickContactNote(e.target.value)}
+                            className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-lg text-[10px] text-slate-700 dark:text-slate-300 focus:outline-none text-right placeholder-slate-400 font-bold"
+                          />
                         </div>
+                      </div>
 
-                        {/* Bottom close button */}
-                        <div className="mt-6">
-                          {radioSimulationStep === 3 ? (
-                            <button
-                              onClick={() => setRadioSimulationStep(0)}
-                              className="w-full py-2 bg-gradient-to-r from-cyan-500 to-indigo-500 hover:from-cyan-600 hover:to-indigo-600 text-white font-bold text-xs rounded-xl transition-all cursor-pointer font-sans"
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleQuickContactSave}
+                          disabled={!onUpdate || !quickContactStatus}
+                          className="flex-1 py-2 bg-slate-800 hover:bg-slate-950 disabled:opacity-50 text-white font-black text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>حفظ التحديث وتوثيق السجل فوراً</span>
+                        </button>
+                        
+                        <button
+                          onClick={() => setShowDigitalCard(true)}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 font-black text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200 dark:border-slate-700"
+                        >
+                          <span>🪪 إصدار بطاقة ميدانية رقمية</span>
+                        </button>
+                      </div>
+
+                      {/* Exceptional Military Medical Committee Decisions Panel */}
+                      <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-850 space-y-3 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-150 dark:border-slate-800 text-right">
+                        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-extrabold text-[11px]">
+                          <span>🩺</span>
+                          <span>قرارات اللجنة الطبية العسكرية الاستثنائية للواء 43</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 block">مدة التمديد الاستثنائي</label>
+                            <select
+                              value={committeeExtDays}
+                              onChange={(e) => setCommitteeExtDays(Number(e.target.value))}
+                              className="w-full px-2 py-1.5 bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 focus:outline-none"
                             >
-                              إتمام وإنهاء عملية البث
-                            </button>
-                          ) : (
-                            <div className="text-slate-500 text-[10px] animate-pulse flex items-center justify-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-cyan-500 animate-ping" />
-                              <span className="font-sans">الرجاء عدم إغلاق الواجهة حتى اكتمال البث اللاسلكي...</span>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    </motion.div>
-                  )}
+                              <option value="7">تمديد ٧ أيام (أسبوع)</option>
+                              <option value="15">تمديد ١٥ يوماً (نصف شهر)</option>
+                              <option value="30">تمديد ٣٠ يوماً (شهر كامل)</option>
+                              <option value="45">تمديد ٤٥ يوماً (أقسام عظام)</option>
+                              <option value="60">تمديد ٦٠ يوماً (لجنة مركزية)</option>
+                            </select>
+                          </div>
 
-                  {/* 3. High-Craft Digital Military Medical Card Generator Modal Overlay */}
-                  {showDigitalCard && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 text-right"
-                    >
-                      <motion.div
-                        initial={{ scale: 0.95, y: 15 }}
-                        animate={{ scale: 1, y: 0 }}
-                        className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative overflow-hidden"
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 block">توضيح الدواعي الطبية للطلب</label>
+                            <input
+                              type="text"
+                              placeholder="مثال: استكمال برنامج العلاج الطبيعي للكسر..."
+                              value={committeeNotes}
+                              onChange={(e) => setCommitteeNotes(e.target.value)}
+                              className="w-full px-2 py-1.5 bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-lg text-[10px] text-slate-700 dark:text-slate-300 focus:outline-none text-right"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleCommitteeExtension}
+                          disabled={!onUpdate}
+                          className="w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-[10px] rounded-xl shadow transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <span>📜</span>
+                          <span>إقرار التمديد الطبي وإصدار مستند القرار الرسمي</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub Tab Content 2: Compliance Metrics & Progress */}
+                {verifySubTab === 'compliance' && (
+                  <div className="space-y-4 animate-fadeIn text-right">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Metric Card A: Compliance Score */}
+                      <div className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-2xl space-y-3 flex flex-col justify-between">
+                        <span className="text-[10px] font-black text-slate-400 block uppercase">تقييم نسبة الالتزام والامتثال</span>
+                        
+                        <div className="flex items-center justify-between">
+                          {/* Compliance state gauge */}
+                          {(() => {
+                            const status = selectedVerifiedRecord.contactStatus || 'pending';
+                            let score = 60;
+                            let rating = 'مستقر ومقبول';
+                            let ratingColor = 'text-amber-500 bg-amber-500/10 border-amber-500/25';
+                            
+                            if (status === 'confirmed') {
+                              score = 100;
+                              rating = 'مثالي ومنضبط';
+                              ratingColor = 'text-emerald-500 bg-emerald-500/10 border-emerald-500/25';
+                            } else if (status === 'request_extension') {
+                              score = 85;
+                              rating = 'تحت الإشراء واللجنة';
+                              ratingColor = 'text-indigo-500 bg-indigo-500/10 border-indigo-500/25';
+                            } else if (status === 'no_answer') {
+                              score = 35;
+                              rating = 'حالة حرجة / لم يرد';
+                              ratingColor = 'text-orange-500 bg-orange-500/10 border-orange-500/25';
+                            } else if (status === 'evading') {
+                              score = 10;
+                              rating = 'متهرب ومخالف';
+                              ratingColor = 'text-rose-500 bg-rose-500/10 border-rose-500/25 animate-pulse';
+                            }
+
+                            return (
+                              <>
+                                <div className="space-y-1">
+                                  <span className="text-2xl font-black text-slate-800 dark:text-white font-mono">{score}%</span>
+                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border block text-center ${ratingColor}`}>{rating}</span>
+                                </div>
+                                <div className="relative w-14 h-14 shrink-0 flex items-center justify-center">
+                                  <svg className="w-full h-full transform -rotate-90">
+                                    <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" className="text-slate-100 dark:text-slate-800" fill="transparent" />
+                                    <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" className={score === 100 ? 'text-emerald-500' : score >= 80 ? 'text-indigo-500' : score >= 50 ? 'text-amber-500' : 'text-rose-500'} fill="transparent" strokeDasharray={150.7} strokeDashoffset={150.7 - (150.7 * score) / 100} />
+                                  </svg>
+                                  <span className="absolute text-[10px] font-bold font-mono">G43</span>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed font-bold pt-1 border-t border-slate-50 dark:border-slate-850">
+                          يتم حساب درجة الامتثال العسكري بناءً على سرعة الاستجابة لنداء الاتصالات والامتثال لبروتوكول الفحص الدوري للشعبة الطبية.
+                        </p>
+                      </div>
+
+                      {/* Metric Card B: Leave consumption Ratio */}
+                      {(() => {
+                        const start = new Date(selectedVerifiedRecord.startDate);
+                        const end = new Date(selectedVerifiedRecord.endDate);
+                        const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000*60*60*24)));
+                        const today = new Date(todayStr);
+                        const elapsedDays = Math.max(0, Math.min(totalDays, Math.ceil((today.getTime() - start.getTime()) / (1000*60*60*24))));
+                        const pct = Math.round((elapsedDays / totalDays) * 100);
+
+                        return (
+                          <div className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-2xl space-y-3 flex flex-col justify-between">
+                            <span className="text-[10px] font-black text-slate-400 block uppercase">استهلاك الإجازة المرضية وتماثل الأنسجة</span>
+                            
+                            <div className="space-y-1">
+                              <div className="flex justify-between items-end">
+                                <span className="text-[10px] font-black text-slate-500">تم {pct}% من الراحة المحددة</span>
+                                <span className="text-xs font-black text-slate-800 dark:text-white font-mono">{elapsedDays} / {totalDays} يوم</span>
+                              </div>
+                              <div className="w-full h-2 bg-slate-100 dark:bg-slate-850 rounded-full overflow-hidden relative">
+                                <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed font-bold pt-1 border-t border-slate-50 dark:border-slate-850">
+                              توصي الإدارة الطبية بالتقيد بجدول الاستراحة المحدد، ومراعاة عدم إجهاض فترة الاستشفاء لضمان الالتحام السليم للأطراف المصابة.
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Timeline Log of Previous Contacts */}
+                    <div className="bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-150 dark:border-slate-850/80 p-4 space-y-3">
+                      <span className="text-[10px] font-black text-indigo-500 block">خط التواصل التاريخي وسجل رصد الفرد:</span>
+                      
+                      <div className="max-h-44 overflow-y-auto pr-1 space-y-2 divide-y divide-slate-100 dark:divide-slate-850">
+                        {selectedVerifiedRecord.contactLogs && selectedVerifiedRecord.contactLogs.length > 0 ? (
+                          selectedVerifiedRecord.contactLogs.map((log, i) => (
+                            <div key={i} className="pt-2 text-[10px] flex justify-between items-start gap-3">
+                              <div className="space-y-1">
+                                <span className="font-extrabold text-slate-700 dark:text-slate-200 block">{log.note}</span>
+                                <span className="text-[9px] text-slate-400 block font-mono">{log.date}</span>
+                              </div>
+                              <span className={`text-[8px] px-2 py-0.5 rounded font-black shrink-0 ${
+                                log.status === 'confirmed' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/15' :
+                                log.status === 'request_extension' ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/15' :
+                                log.status === 'evading' ? 'bg-rose-500/10 text-rose-500 border border-rose-500/15 animate-pulse' :
+                                'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                              }`}>
+                                {log.status === 'confirmed' ? 'تم الرد والالتحاق' :
+                                 log.status === 'request_extension' ? 'تم طلب تمديد' :
+                                 log.status === 'evading' ? 'مخالف متهرب' :
+                                 log.status === 'no_answer' ? 'لم يرد على الاتصال' : 'قيد المتابعة'}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center text-slate-400 py-6 text-[10px] font-bold">
+                            لا توجد أي سجلات اتصالات مؤرشفة لهذا المنتسب حالياً.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub Tab Content 3: Satellite Geolocation Radar Visualization */}
+                {verifySubTab === 'geotrack' && (
+                  <div className="space-y-4 animate-fadeIn text-right">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Radar screen element */}
+                      <div className="p-4 bg-slate-950 dark:bg-black border border-slate-800 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden h-52">
+                        {/* CSS Radar sweep animation */}
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.06)_1%,transparent_60%)] pointer-events-none" />
+                        <div className="absolute w-44 h-44 rounded-full border border-cyan-500/20 flex items-center justify-center">
+                          <div className="absolute w-32 h-32 rounded-full border border-cyan-500/15 flex items-center justify-center">
+                            <div className="absolute w-16 h-16 rounded-full border border-cyan-500/10" />
+                          </div>
+                        </div>
+                        
+                        {/* Radar sweep light overlay */}
+                        <div className="absolute w-24 h-24 border-r-2 border-t-2 border-cyan-500/35 rounded-full animate-spin pointer-events-none" style={{ transformOrigin: 'center', animationDuration: '4s' }} />
+
+                        {/* Blip locator mark */}
+                        <div className="absolute top-1/3 left-1/4 w-3.5 h-3.5 flex items-center justify-center">
+                          <span className="absolute w-full h-full bg-cyan-500 rounded-full animate-ping opacity-75" />
+                          <span className="w-2 h-2 bg-cyan-400 rounded-full border border-white" />
+                        </div>
+
+                        <span className="text-[8px] font-mono text-cyan-500 absolute bottom-3 right-3 select-none">SCAN: ACTIVE SECURE LINK</span>
+                        <Compass className="w-10 h-10 text-cyan-500/40 animate-pulse" />
+                        <span className="text-[10px] font-mono text-cyan-400 mt-2 tracking-widest animate-pulse font-bold">SATELLITE BEACON SYNCING...</span>
+                      </div>
+
+                      {/* Technical specifications panel */}
+                      <div className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-2xl flex flex-col justify-between">
+                        <span className="text-[10px] font-black text-slate-400 block uppercase">مواصفات التموضع الجغرافي والاتصال</span>
+                        
+                        <div className="space-y-2 text-[10px] pt-1">
+                          <div className="flex justify-between items-center border-b border-slate-50 dark:border-slate-850 pb-1.5">
+                            <span className="font-bold text-slate-400">إحداثيات الرصد:</span>
+                            <span className="font-mono text-slate-800 dark:text-slate-200">13.{selectedVerifiedRecord.id.charCodeAt(0)}54° N, 43.{selectedVerifiedRecord.id.charCodeAt(1)}41° E</span>
+                          </div>
+                          <div className="flex justify-between items-center border-b border-slate-50 dark:border-slate-850 pb-1.5">
+                            <span className="font-bold text-slate-400">منطقة البث:</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">الساحل الغربي - قطاع {selectedVerifiedRecord.unit || 'محيط اللواء'}</span>
+                          </div>
+                          <div className="flex justify-between items-center border-b border-slate-50 dark:border-slate-850 pb-1.5">
+                            <span className="font-bold text-slate-400">حالة النطاق الطبي:</span>
+                            <span className="font-extrabold text-emerald-500">🟢 متطابق مع التقرير والالتزام</span>
+                          </div>
+                          <div className="flex justify-between items-center border-b border-slate-50 dark:border-slate-850 pb-1.5">
+                            <span className="font-bold text-slate-400">جودة الإشارة اللاسلكية:</span>
+                            <span className="font-mono font-bold text-slate-800 dark:text-slate-200">89% (قوي ومستقر - AMANSAT-4)</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-slate-400">الهوائي والاتصالات:</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">الشبكة الرقمية العسكرية الآمنة v3</span>
+                          </div>
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-850 rounded-xl text-[9px] text-slate-500 leading-relaxed font-bold">
+                          ⚠️ <strong>تنبيه الرقابة الأمنية:</strong> الرصد الجغرافي محاكاة قائمة على موقع معسكرات اللواء 43 عمالقة وشبكة التغطية الوطنية. يلتزم الفرد بعدم مغادرة النطاق دون تصريح.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub Tab Content 4: Fitness Assessment / Resumption Duty Clearance */}
+                {verifySubTab === 'fitness' && (
+                  <div className="space-y-4 animate-fadeIn text-right">
+                    <div className="p-4 bg-slate-50/50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850 rounded-2xl space-y-4">
+                      <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-extrabold text-xs">
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>تقييم الأهلية والتحقق من الجاهزية الطبية للالتحاق الفوري بالجبهات</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 block">تصنيف اللياقة الطبية للمثول:</label>
+                          <select
+                            value={customFitnessDecision}
+                            onChange={(e) => setCustomFitnessDecision(e.target.value as any)}
+                            className="w-full px-2.5 py-2 bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl text-[10px] font-bold text-slate-700 dark:text-slate-300 focus:outline-none"
+                          >
+                            <option value="fit">🟢 لائق عسكرياً وبدنياً للخدمة الميدانية الكاملة</option>
+                            <option value="light_duty">🟡 لائق لخدمة مكتبية خفيفة / حراسة عادية ومحدودة</option>
+                            <option value="unfit">🔴 غير لائق حالياً ويقترح تمديد الإجازة الاستشفائية</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 block">توجيهات اللجنة الطبية المرافقة:</label>
+                          <input
+                            type="text"
+                            value={fitnessCommitteeNotes}
+                            onChange={(e) => setFitnessCommitteeNotes(e.target.value)}
+                            placeholder="مثال: يلتزم المذكور بالفحص الطبي الدوري كل شهر للتأكد..."
+                            className="w-full px-2.5 py-2 bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl text-[10px] text-slate-700 dark:text-slate-300 focus:outline-none text-right placeholder-slate-400"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleCustomFitnessSubmit}
+                        disabled={!onUpdate}
+                        className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-[11px] rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        {/* Yemeni flag top border */}
-                        <div className="absolute top-0 left-0 right-0 h-1.5 flex">
-                          <div className="w-1/3 h-full bg-red-600" />
-                          <div className="w-1/3 h-full bg-white" />
-                          <div className="w-1/3 h-full bg-black" />
-                        </div>
+                        <Award className="w-4 h-4" />
+                        <span>إصدار شهادة اللياقة الطبية العسكرية ووثيقة إذن العودة</span>
+                      </button>
+                    </div>
 
-                        {/* Card Header */}
-                        <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3 mb-4 mt-2">
-                          <button
-                            onClick={() => setShowDigitalCard(false)}
-                            className="p-1 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                          <div className="text-right">
-                            <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500">القوات المسلحة اليمنية - ألوية العمالقة</h4>
-                            <h3 className="text-xs font-black text-slate-800 dark:text-white">اللواء 43 عمالقة - الإدارة الطبية الميدانية</h3>
-                          </div>
-                        </div>
-
-                        {/* Actual ID Card layout */}
-                        <div className="p-4 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/40 dark:to-slate-950/20 border border-slate-150 dark:border-slate-850 rounded-2xl relative shadow-inner overflow-hidden">
-                          {/* Diagonal watermark text */}
-                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] select-none pointer-events-none transform -rotate-12">
-                            <span className="text-4xl font-black text-slate-900">اللواء 43 عمالقة</span>
+                    {/* Fitness Clearance Receipt print preview overlay */}
+                    {showFitnessReceipt && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 text-right overflow-y-auto"
+                      >
+                        <motion.div
+                          initial={{ scale: 0.95, y: 15 }}
+                          animate={{ scale: 1, y: 0 }}
+                          className="bg-white text-slate-900 border-2 border-slate-300 rounded-3xl p-6 max-w-lg w-full shadow-2xl relative my-8"
+                        >
+                          {/* Yemeni flag top border */}
+                          <div className="absolute top-0 left-0 right-0 h-1.5 flex">
+                            <div className="w-1/3 h-full bg-red-600" />
+                            <div className="w-1/3 h-full bg-white" />
+                            <div className="w-1/3 h-full bg-black" />
                           </div>
 
-                          <div className="flex gap-4 relative z-10">
-                            {/* Member rank avatar */}
-                            <div className="w-24 h-24 rounded-xl bg-slate-200 dark:bg-slate-850 border border-slate-300 dark:border-slate-750 flex flex-col items-center justify-center relative overflow-hidden shrink-0">
-                              <Activity className="w-10 h-10 text-slate-400 dark:text-slate-600 animate-pulse" />
-                              <div className="absolute bottom-0 left-0 right-0 bg-slate-850/90 dark:bg-slate-950/95 text-slate-800 dark:text-slate-200 text-[8px] font-black text-center py-1">
-                                {selectedVerifiedRecord.rank}
-                              </div>
-                            </div>
-
-                            {/* Details list */}
-                            <div className="flex-1 space-y-1.5 text-right">
-                              <div>
-                                <span className="text-[8px] text-slate-400 dark:text-slate-500 block">الاسم الثلاثي:</span>
-                                <span className="text-xs font-black text-slate-850 dark:text-white block">{selectedVerifiedRecord.name}</span>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <span className="text-[8px] text-slate-400 dark:text-slate-500 block">الرقم العسكري:</span>
-                                  <span className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300 block">Mil-43-{selectedVerifiedRecord.id.substring(4, 9).toUpperCase()}</span>
-                                </div>
-                                <div>
-                                  <span className="text-[8px] text-slate-400 dark:text-slate-500 block">الوحدة/اللواء:</span>
-                                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 block">{selectedVerifiedRecord.unit || 'اللواء 43 عمالقة'}</span>
-                                </div>
-                              </div>
-                              <div>
-                                <span className="text-[8px] text-slate-400 dark:text-slate-500 block">التشخيص الحالي:</span>
-                                <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 block">{selectedVerifiedRecord.diagnosis}</span>
-                              </div>
-                            </div>
+                          {/* Document Header */}
+                          <div className="text-center space-y-1 mb-5 border-b border-slate-200 pb-4 mt-2">
+                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider">الجمهورية اليمنية - وزارة الدفاع</h4>
+                            <h3 className="text-xs font-black text-slate-800">ألوية العمالقة - اللواء 43 عمالقة</h3>
+                            <h2 className="text-sm font-black text-indigo-700">شهادة اللياقة الطبية العسكرية واستئناف الواجب الميداني</h2>
+                            <div className="text-[9px] text-slate-400 font-mono mt-1">رمز التحقق الطبي: CERT-FIT-{Math.floor(100000 + Math.random() * 900000)}</div>
                           </div>
 
-                          {/* Footer details of Leave duration */}
-                          <div className="mt-4 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800 grid grid-cols-2 gap-2 text-right relative z-10">
-                            <div>
-                              <span className="text-[8px] text-slate-400 dark:text-slate-500 block">تاريخ بدء الإجازة:</span>
-                              <span className="text-[10px] font-mono font-bold text-slate-750 dark:text-slate-300">{selectedVerifiedRecord.startDate}</span>
+                          {/* Official Text of Clearance */}
+                          <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-4 font-sans text-xs leading-relaxed text-slate-800">
+                            <p>
+                              تشهد الإدارة الطبية والشؤون العلاجية للواء 43 عمالقة بالقطاع الميداني، بأنه بعد مثول ومراجعة حالة الفرد الموضح بياناته تالياً:
+                            </p>
+
+                            <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                              <div>الاسم واللقب: <strong className="text-slate-900">{selectedVerifiedRecord.name}</strong></div>
+                              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                <div>الرتبة العسكرية: <strong className="text-slate-900">{selectedVerifiedRecord.rank}</strong></div>
+                                <div>رقم الهوية: <strong className="text-slate-900">Mil-43-{selectedVerifiedRecord.id.substring(4, 9).toUpperCase()}</strong></div>
+                              </div>
+                              <div>الكتيبة/الوحدة: <strong className="text-slate-900">{selectedVerifiedRecord.unit || 'اللواء 43 عمالقة'}</strong></div>
+                              <div>التشخيص الطبي المنقضي: <strong className="text-indigo-600">{selectedVerifiedRecord.diagnosis}</strong></div>
                             </div>
-                            <div>
-                              <span className="text-[8px] text-slate-400 dark:text-slate-500 block">تاريخ العودة للكتيبة:</span>
-                              <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400">{selectedVerifiedRecord.endDate}</span>
+
+                            <p>
+                              وبعد التحقق السريري والفحص اللازم، تقر اللجنة الطبية بالقرار العملياتي التالي:
+                            </p>
+
+                            <div className="p-3 bg-emerald-50 border border-emerald-150 rounded-xl text-center">
+                              <span className="text-[10px] text-emerald-600 block">حالة اللياقة العسكرية المعتمدة:</span>
+                              <span className="text-sm font-black text-emerald-700">
+                                {customFitnessDecision === 'fit' ? 'لائق طبياً وبدنياً للخدمة الميدانية الكاملة' :
+                                 customFitnessDecision === 'light_duty' ? 'لائق للخدمات الخفيفة والمهام الإدارية والمكتبية فقط' :
+                                 'غير لائق طبياً مؤقتاً ويستلزم مواصلة برنامج الاستشفاء'}
+                              </span>
+                            </div>
+
+                            <div className="text-[10px] text-slate-500 italic">
+                              <strong>توجيهات اللجنة الاستشفائية:</strong> {fitnessCommitteeNotes}
                             </div>
                           </div>
 
-                          {/* Barcode and Stamp */}
-                          <div className="mt-4 pt-3 border-t border-slate-200/65 dark:border-slate-800/65 flex items-center justify-between gap-2 relative z-10">
-                            {/* Approved Stamp effect */}
-                            <div className="border-2 border-emerald-500/40 rounded-lg p-1.5 transform rotate-3 flex flex-col items-center justify-center bg-white/30 dark:bg-slate-900/30 select-none">
-                              <span className="text-[7px] text-emerald-600 dark:text-emerald-400 font-black">الشؤون الطبية العسكرية</span>
-                              <span className="text-[9px] text-emerald-700 dark:text-emerald-300 font-bold">صُدّق إلكترونياً</span>
-                              <span className="text-[6px] text-slate-450">اللواء 43 عمالقة</span>
+                          {/* Signatures & Stamps */}
+                          <div className="mt-5 pt-3 flex justify-between items-center text-[10px] border-t border-slate-100">
+                            {/* Approved Stamp */}
+                            <div className="border-2 border-dashed border-emerald-500 rounded-xl p-2 transform -rotate-2 bg-emerald-50/5 flex flex-col items-center">
+                              <span className="text-[8px] text-emerald-600 font-black">الشؤون الطبية الميدانية</span>
+                              <span className="text-[9px] text-emerald-700 font-bold">صُدِّق واعتُمِد طبياً</span>
+                              <span className="text-[6px] font-mono text-emerald-500">{new Date().toLocaleDateString('ar-YE')}</span>
                             </div>
 
-                            {/* CSS Barcode */}
-                            <div className="flex flex-col items-center">
-                              <div className="flex h-7 items-stretch gap-[1.5px] bg-white p-1 rounded border border-slate-200">
-                                <div className="w-[1px] bg-black" />
-                                <div className="w-[3px] bg-black" />
-                                <div className="w-[1px] bg-black" />
-                                <div className="w-[2px] bg-black" />
-                                <div className="w-[1px] bg-black" />
-                                <div className="w-[3px] bg-black" />
-                                <div className="w-[2px] bg-black" />
-                                <div className="w-[1px] bg-black" />
-                                <div className="w-[3px] bg-black" />
-                                <div className="w-[1px] bg-black" />
-                                <div className="w-[2px] bg-black" />
-                                <div className="w-[1px] bg-black" />
-                                <div className="w-[3px] bg-black" />
-                                <div className="w-[1px] bg-black" />
-                                <div className="w-[2px] bg-black" />
-                              </div>
-                              <span className="text-[7px] font-mono text-slate-500 mt-1 uppercase">Mil-43-{selectedVerifiedRecord.id.substring(4, 9)}</span>
+                            <div className="text-left space-y-1 font-sans">
+                              <div className="font-bold text-slate-850">رئيس الشعبة الطبية للواء 43:</div>
+                              <div className="font-extrabold text-slate-900 text-[11px]">العقيد طبيب / ناصر الحميري</div>
+                              <div className="text-[8px] text-slate-400">إدارة الجاهزية والامتثال - عدن</div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Interactive Buttons */}
-                        <div className="mt-5 flex gap-2">
-                          <button
-                            onClick={() => {
-                              window.print();
-                              if (triggerToast) triggerToast('بدء أمر طباعة بطاقة الفرد الطبية', 'success');
-                            }}
-                            className="flex-1 py-2 bg-slate-800 hover:bg-slate-950 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>طباعة الهوية الطبية</span>
-                          </button>
-                          <button
-                            onClick={() => setShowDigitalCard(false)}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-colors"
-                          >
-                            إغلاق
-                          </button>
-                        </div>
+                          {/* Action buttons */}
+                          <div className="mt-6 flex gap-2 print:hidden">
+                            <button
+                              onClick={() => {
+                                window.print();
+                                if (triggerToast) triggerToast('بدء طباعة شهادة اللياقة الطبية واستئناف المهام', 'success');
+                              }}
+                              className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-950 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>طباعة الشهادة الرسمية</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setShowFitnessReceipt(false);
+                              }}
+                              className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer font-sans"
+                            >
+                              إغلاق
+                            </button>
+                          </div>
+                        </motion.div>
                       </motion.div>
+                    )}
+                  </div>
+                )}
+
+                {/* Satellite Tactical Direct Broadcast Notice Simulator overlay */}
+                {radioSimulationStep > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[9999] flex items-center justify-center p-4 text-center font-mono"
+                  >
+                    <motion.div
+                      initial={{ scale: 0.95, y: 15 }}
+                      animate={{ scale: 1, y: 0 }}
+                      className="bg-slate-900 border-2 border-cyan-500/30 rounded-3xl p-6 max-w-md w-full shadow-[0_0_25px_rgba(6,182,212,0.15)] relative overflow-hidden"
+                    >
+                      {/* Futuristic scanlines effect */}
+                      <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,38,0)_50%,rgba(6,182,212,0.03)_50%)] bg-[length:100%_4px] pointer-events-none" />
+
+                      {/* Header radar scope */}
+                      <div className="flex flex-col items-center justify-center mb-6 space-y-2 relative">
+                        {radioSimulationStep === 1 && (
+                          <div className="w-16 h-16 rounded-full border border-cyan-500/40 flex items-center justify-center relative overflow-hidden">
+                            <div className="absolute inset-0 bg-cyan-500/10 rounded-full animate-ping" />
+                            <div className="w-3 h-3 bg-cyan-500 rounded-full animate-pulse" />
+                          </div>
+                        )}
+                        {radioSimulationStep === 2 && (
+                          <div className="w-16 h-16 rounded-full border-2 border-indigo-500/40 flex items-center justify-center relative overflow-hidden bg-indigo-950/20">
+                            <div className="w-8 h-8 rounded-full border-2 border-dashed border-indigo-400 animate-spin" />
+                          </div>
+                        )}
+                        {radioSimulationStep === 3 && (
+                          <div className="w-16 h-16 rounded-full border-2 border-emerald-500 flex items-center justify-center bg-emerald-950/30">
+                            <span className="text-2xl">✅</span>
+                          </div>
+                        )}
+
+                        <div className="text-center">
+                          <h3 className="text-cyan-400 text-xs font-black tracking-widest uppercase">G43 MILITARY SATELLITE BROADCAST SYSTEM</h3>
+                          <h4 className="text-[10px] text-slate-500">اللواء 43 عمالقة - نظام الاتصال الميداني الموحد</h4>
+                        </div>
+                      </div>
+
+                      {/* Interactive dynamic logs */}
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-right space-y-2.5 text-[11px] text-cyan-300">
+                        {radioSimulationStep === 1 && (
+                          <div className="space-y-1 font-mono leading-relaxed">
+                            <p className="text-slate-400 animate-pulse">&gt; scanning military satellite transponders...</p>
+                            <p className="text-slate-400">&gt; lock established on B-MANDAB SATELLITE SECTOR 4</p>
+                            <p className="text-slate-400">&gt; secure encryption protocol initialized (AES-256-MIL)...</p>
+                          </div>
+                        )}
+
+                        {radioSimulationStep === 2 && (
+                          <div className="space-y-1 font-mono leading-relaxed">
+                            <p className="text-slate-500">&gt; lock established on SATELLITE SECTOR 4</p>
+                            <p className="text-amber-400">&gt; generating secure recall dispatch telegram...</p>
+                            <p className="text-indigo-400 font-bold">&gt; RECIPIENT: {selectedVerifiedRecord.rank} / {selectedVerifiedRecord.name}</p>
+                            <p className="text-indigo-400 font-bold">&gt; UNIT: {selectedVerifiedRecord.unit || 'الكتيبة الأولى - اللواء 43'}</p>
+                            <p className="text-cyan-400 animate-pulse">&gt; broadcasting telemetry packages on FREQ: 154.250 MHz...</p>
+                          </div>
+                        )}
+
+                        {radioSimulationStep === 3 && (
+                          <div className="space-y-1.5 font-sans leading-relaxed text-slate-200">
+                            <div className="text-center font-bold text-[12px] text-emerald-400 mb-2 border-b border-emerald-500/20 pb-1.5">📡 تم البث وتلقي الاستلام بنجاح!</div>
+                            <p className="text-[11px]">
+                              تم إرسال البلاغ العسكري المشفر <strong className="text-cyan-400">G43-{Math.floor(1000 + Math.random()*9000)}</strong> إلى الفرد لتأكيد العودة واستئناف مهام الخدمة والالتحاق بالمعسكر فوراً.
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              تم تسجيل هذا الإجراء تلقائياً في السجل التاريخي للفرد لضمان الانضباط العسكري التام والمتابعة الميدانية الصارمة.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom close button */}
+                      <div className="mt-6">
+                        {radioSimulationStep === 3 ? (
+                          <button
+                            onClick={() => setRadioSimulationStep(0)}
+                            className="w-full py-2 bg-gradient-to-r from-cyan-500 to-indigo-500 hover:from-cyan-600 hover:to-indigo-600 text-white font-bold text-xs rounded-xl transition-all cursor-pointer font-sans"
+                          >
+                            إتمام وإنهاء عملية البث
+                          </button>
+                        ) : (
+                          <div className="text-slate-500 text-[10px] animate-pulse flex items-center justify-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-cyan-500 animate-ping" />
+                            <span className="font-sans">الرجاء عدم إغلاق الواجهة حتى اكتمال البث اللاسلكي...</span>
+                          </div>
+                        )}
+                      </div>
                     </motion.div>
-                  )}
-                </div>
+                  </motion.div>
+                )}
+
+                {/* 3. High-Craft Digital Military Medical Card Generator Modal Overlay */}
+                {showDigitalCard && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 text-right"
+                  >
+                    <motion.div
+                      initial={{ scale: 0.95, y: 15 }}
+                      animate={{ scale: 1, y: 0 }}
+                      className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative overflow-hidden"
+                    >
+                      {/* Yemeni flag top border */}
+                      <div className="absolute top-0 left-0 right-0 h-1.5 flex flex-row">
+                        <div className="w-1/3 h-full bg-red-600" />
+                        <div className="w-1/3 h-full bg-white" />
+                        <div className="w-1/3 h-full bg-black" />
+                      </div>
+
+                      {/* Card Header */}
+                      <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3 mb-4 mt-2">
+                        <button
+                          onClick={() => setShowDigitalCard(false)}
+                          className="p-1 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        <div className="text-right">
+                          <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500">القوات المسلحة اليمنية - ألوية العمالقة</h4>
+                          <h3 className="text-xs font-black text-slate-800 dark:text-white">اللواء 43 عمالقة - الإدارة الطبية الميدانية</h3>
+                        </div>
+                      </div>
+
+                      {/* Actual ID Card layout */}
+                      <div className="p-4 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/40 dark:to-slate-950/20 border border-slate-150 dark:border-slate-850 rounded-2xl relative shadow-inner overflow-hidden">
+                        {/* Diagonal watermark text */}
+                        <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] select-none pointer-events-none transform -rotate-12">
+                          <span className="text-4xl font-black text-slate-900">اللواء 43 عمالقة</span>
+                        </div>
+
+                        <div className="flex gap-4 relative z-10">
+                          {/* Member rank avatar */}
+                          <div className="w-24 h-24 rounded-xl bg-slate-200 dark:bg-slate-850 border border-slate-300 dark:border-slate-750 flex flex-col items-center justify-center relative overflow-hidden shrink-0">
+                            <Activity className="w-10 h-10 text-slate-400 dark:text-slate-600 animate-pulse" />
+                            <div className="absolute bottom-0 left-0 right-0 bg-slate-850/90 dark:bg-slate-950/95 text-slate-200 text-[8px] font-black text-center py-1">
+                              {selectedVerifiedRecord.rank}
+                            </div>
+                          </div>
+
+                          {/* Details list */}
+                          <div className="flex-1 space-y-1.5 text-right">
+                            <div>
+                              <span className="text-[8px] text-slate-400 dark:text-slate-500 block">الاسم الثلاثي:</span>
+                              <span className="text-xs font-black text-slate-850 dark:text-white block">{selectedVerifiedRecord.name}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="text-[8px] text-slate-400 dark:text-slate-500 block">الرقم العسكري:</span>
+                                <span className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300 block">Mil-43-{selectedVerifiedRecord.id.substring(4, 9).toUpperCase()}</span>
+                              </div>
+                              <div>
+                                <span className="text-[8px] text-slate-400 dark:text-slate-500 block">الوحدة/اللواء:</span>
+                                <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 block">{selectedVerifiedRecord.unit || 'اللواء 43 عمالقة'}</span>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-[8px] text-slate-400 dark:text-slate-500 block">التشخيص الحالي:</span>
+                              <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 block">{selectedVerifiedRecord.diagnosis}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Footer details of Leave duration */}
+                        <div className="mt-4 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800 grid grid-cols-2 gap-2 text-right relative z-10">
+                          <div>
+                            <span className="text-[8px] text-slate-400 dark:text-slate-500 block">تاريخ بدء الإجازة:</span>
+                            <span className="text-[10px] font-mono font-bold text-slate-750 dark:text-slate-300">{selectedVerifiedRecord.startDate}</span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] text-slate-400 dark:text-slate-500 block">تاريخ العودة للكتيبة:</span>
+                            <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400">{selectedVerifiedRecord.endDate}</span>
+                          </div>
+                        </div>
+
+                        {/* Barcode and Stamp */}
+                        <div className="mt-4 pt-3 border-t border-slate-200/65 dark:border-slate-800/65 flex items-center justify-between gap-2 relative z-10">
+                          {/* Approved Stamp effect */}
+                          <div className="border-2 border-emerald-500/40 rounded-lg p-1.5 transform rotate-3 flex flex-col items-center justify-center bg-white/30 dark:bg-slate-900/30 select-none">
+                            <span className="text-[7px] text-emerald-600 dark:text-emerald-400 font-black">الشؤون الطبية العسكرية</span>
+                            <span className="text-[9px] text-emerald-700 dark:text-emerald-300 font-bold">صُدّق إلكترونياً</span>
+                            <span className="text-[6px] text-slate-450">اللواء 43 عمالقة</span>
+                          </div>
+
+                          {/* CSS Barcode */}
+                          <div className="flex flex-col items-center">
+                            <div className="flex h-7 items-stretch gap-[1.5px] bg-white p-1 rounded border border-slate-200">
+                              <div className="w-[1px] bg-black" />
+                              <div className="w-[3px] bg-black" />
+                              <div className="w-[1px] bg-black" />
+                              <div className="w-[2px] bg-black" />
+                              <div className="w-[1px] bg-black" />
+                              <div className="w-[3px] bg-black" />
+                              <div className="w-[2px] bg-black" />
+                              <div className="w-[1px] bg-black" />
+                              <div className="w-[3px] bg-black" />
+                              <div className="w-[1px] bg-black" />
+                              <div className="w-[2px] bg-black" />
+                              <div className="w-[1px] bg-black" />
+                              <div className="w-[3px] bg-black" />
+                              <div className="w-[1px] bg-black" />
+                              <div className="w-[2px] bg-black" />
+                            </div>
+                            <span className="text-[7px] font-mono text-slate-500 mt-1 uppercase font-bold">Mil-43-{selectedVerifiedRecord.id.substring(4, 9)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Interactive Buttons */}
+                      <div className="mt-5 flex gap-2">
+                        <button
+                          onClick={() => {
+                            window.print();
+                            if (triggerToast) triggerToast('بدء أمر طباعة بطاقة الفرد الطبية', 'success');
+                          }}
+                          className="flex-1 py-2 bg-slate-800 hover:bg-slate-950 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>طباعة الهوية الطبية</span>
+                        </button>
+                        <button
+                          onClick={() => setShowDigitalCard(false)}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                        >
+                          إغلاق
+                        </button>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center py-12 bg-slate-50/40 dark:bg-slate-950/10 rounded-xl border border-dashed border-slate-200 dark:border-slate-850 text-center">
@@ -2152,6 +2775,139 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
               </div>
             )}
           </div>
+
+          {/* Interactive Dialing Voice Call Simulator Overlay */}
+          {isPhoneCalling && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="absolute inset-0 bg-slate-950/85 backdrop-blur-md z-[100] flex items-center justify-center p-4 text-center font-sans"
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 15 }}
+                animate={{ scale: 1, y: 0 }}
+                className="bg-slate-900 border-2 border-indigo-500/30 rounded-3xl p-6 max-w-sm w-full shadow-2xl relative overflow-hidden"
+              >
+                {/* Visual scanline style */}
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,38,0)_50%,rgba(99,102,241,0.02)_50%)] bg-[length:100%_4px] pointer-events-none" />
+
+                <div className="flex flex-col items-center space-y-4 pt-4">
+                  {/* Avatar ring animations */}
+                  <div className="relative w-24 h-24 rounded-full flex items-center justify-center bg-indigo-950/40 border border-indigo-500/20">
+                    {phoneCallStep === 1 && (
+                      <>
+                        <span className="absolute inset-0 rounded-full border border-indigo-500/40 animate-ping" />
+                        <span className="absolute inset-2 rounded-full border border-indigo-500/20 animate-ping" style={{ animationDelay: '0.4s' }} />
+                      </>
+                    )}
+                    {phoneCallStep === 2 && (
+                      <span className="absolute inset-0 rounded-full border-2 border-emerald-500/50 animate-pulse" />
+                    )}
+                    <Phone className={`w-10 h-10 ${phoneCallStep === 2 ? 'text-emerald-400 animate-bounce' : 'text-indigo-400 animate-pulse'}`} />
+                  </div>
+
+                  <div className="text-center space-y-1">
+                    <span className="text-[10px] text-indigo-400 font-mono tracking-widest uppercase block">G43 TACTICAL VOICE TRANSMISSION</span>
+                    <h3 className="text-sm font-black text-white">{selectedVerifiedRecord?.rank} / {selectedVerifiedRecord?.name}</h3>
+                    <span className="text-[10px] text-slate-500 block font-mono">Mil-43-{selectedVerifiedRecord?.id.substring(4, 9).toUpperCase()}</span>
+                  </div>
+
+                  {/* Interactive Dial status box */}
+                  <div className="w-full bg-slate-950 p-4 rounded-xl border border-slate-850/80 text-right text-xs leading-relaxed">
+                    {phoneCallStep === 1 && (
+                      <div className="text-center text-indigo-300 font-mono space-y-1 animate-pulse">
+                        <p>&gt; جاري تأمين الاتصال الميداني المشفر...</p>
+                        <p>&gt; جاري توجيه التردد والنداء هاتفياً...</p>
+                      </div>
+                    )}
+
+                    {phoneCallStep === 2 && (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center border-b border-indigo-500/20 pb-1.5 mb-1.5 text-slate-400 text-[10px]">
+                          <span>الحالة: متصل وآمن 🔒</span>
+                          <span className="font-mono text-emerald-400">00:15</span>
+                        </div>
+                        <p className="text-emerald-300 font-bold font-sans">
+                          {simCallResponseText}
+                        </p>
+                      </div>
+                    )}
+
+                    {phoneCallStep === 3 && (
+                      <div className="space-y-2 text-center">
+                        <p className="text-rose-400 font-bold">⚠️ تعذر تأكيد الاتصال الصوتي</p>
+                        <p className="text-[10px] text-slate-500">
+                          {selectedVerifiedRecord?.contactStatus === 'evading'
+                            ? 'جهاز الفرد مغلق بالكامل أو خارج التغطية. تم رصد الإشارة وتمرير بلاغ التهرب.'
+                            : 'لا يوجد رد من الفرد بعد تكرار الرنين. تم تدوين محاولة الاتصال.'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Operational Quick Call Actions */}
+                  {phoneCallStep === 2 && (
+                    <div className="w-full grid grid-cols-2 gap-2 pt-2">
+                      <button
+                        onClick={async () => {
+                          if (!selectedVerifiedRecord || !onUpdate) return;
+                          const now = new Date();
+                          const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+                          const updated = {
+                            ...selectedVerifiedRecord,
+                            contactStatus: 'confirmed' as const,
+                            history: [
+                              ...(selectedVerifiedRecord.history || []),
+                              { date: dateStr, action: 'تعديل' as const, details: 'تم التحقق الهاتفي المباشر: أكد الفرد تماثله للشفاء وجهوزيته للعودة الفورية.' }
+                            ]
+                          };
+                          await onUpdate(updated);
+                          setIsPhoneCalling(false);
+                          if (triggerToast) triggerToast('تم تأكيد عودة الفرد الميدانية في السجل', 'success');
+                        }}
+                        className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-colors"
+                      >
+                        إقرار العودة
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          if (!selectedVerifiedRecord || !onUpdate) return;
+                          const now = new Date();
+                          const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+                          const updated = {
+                            ...selectedVerifiedRecord,
+                            contactStatus: 'request_extension' as const,
+                            history: [
+                              ...(selectedVerifiedRecord.history || []),
+                              { date: dateStr, action: 'تعديل' as const, details: 'التحقق الهاتفي: طلب الفرد تمديداً طبياً لعدم اكتمال شفائه ووجود موانع حركية.' }
+                            ]
+                          };
+                          await onUpdate(updated);
+                          setIsPhoneCalling(false);
+                          setVerifySubTab('info');
+                          if (triggerToast) triggerToast('تم تحويل الفرد لطلب تمديد اللجنة الطبية', 'info');
+                        }}
+                        className="py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-colors"
+                      >
+                        طلب تمديد رسمي
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Hang up / Close dialer button */}
+                  <button
+                    onClick={() => setIsPhoneCalling(false)}
+                    className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 mt-2"
+                  >
+                    <PhoneOff className="w-3.5 h-3.5" />
+                    <span>إنهاء المكالمة والعودة للبوابة</span>
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+
         </div>
       )}
 
@@ -2843,6 +3599,1349 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
       </div>
       )}
 
+      {/* 12. Military Hospital Referrals Portal */}
+      {activeModalId === 'referrals' && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6 max-w-4xl mx-auto text-right"
+        >
+          {activeReferralPrint ? (
+            /* Printable Referral Slip Preview */
+            <div className="bg-white text-slate-900 p-8 rounded-2xl border-2 border-slate-300 shadow-lg relative max-w-2xl mx-auto font-sans print:border-0 print:shadow-none print:p-0">
+              {/* Header and Logo simulation */}
+              <div className="flex justify-between items-start border-b-2 border-slate-800 pb-4 mb-6">
+                <div className="text-left space-y-1 text-xs">
+                  <p className="font-bold">الرقم: {activeReferralPrint.id}</p>
+                  <p className="font-bold">التاريخ: {activeReferralPrint.date}</p>
+                  <p className="font-bold">الدرجة: عاجل جداً</p>
+                </div>
+                <div className="text-center space-y-1">
+                  <h2 className="text-base font-black">الجمهورية اليمنية</h2>
+                  <h3 className="text-sm font-bold">قوات العمالقة الجنوبية - اللواء 43 عمالقة</h3>
+                  <h4 className="text-xs font-bold text-slate-700">شعبة الشؤون الطبية والطبابة الميدانية</h4>
+                </div>
+              </div>
+
+              <div className="text-center my-6">
+                <h1 className="text-lg font-black border-2 border-slate-900 px-6 py-2 inline-block rounded bg-slate-50 uppercase tracking-widest">
+                  خطاب إحالة طبية رسمية
+                </h1>
+              </div>
+
+              <div className="space-y-4 text-xs leading-relaxed mb-8">
+                <p className="font-bold text-sm">إلى إدارة مستشفى: <span className="underline font-extrabold">{activeReferralPrint.hospital}</span> المحترمين</p>
+                <p className="text-justify">
+                  تحية طيبة وبعد،، يرجى من سيادتكم استقبال ومعاينة الفرد الموضح بياناته أدناه وتقديم الخدمات الطبية التخصصية اللازمة لحالته الطبية وصرف العلاج المقرر وإفادتنا بتقرير طبي مفصل بحالته:
+                </p>
+
+                {/* Soldier info table */}
+                <div className="border border-slate-400 rounded-lg overflow-hidden my-4">
+                  <table className="w-full text-xs text-right border-collapse">
+                    <tbody>
+                      <tr className="border-b border-slate-300">
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300 w-1/4">الاسم الكامل:</td>
+                        <td className="p-2.5 font-extrabold">{activeReferralPrint.name}</td>
+                      </tr>
+                      <tr className="border-b border-slate-300">
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300">الرتبة العسكرية:</td>
+                        <td className="p-2.5 font-bold">{activeReferralPrint.rank}</td>
+                      </tr>
+                      <tr className="border-b border-slate-300">
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300">الكتيبة / القوة:</td>
+                        <td className="p-2.5 font-bold">{activeReferralPrint.unit}</td>
+                      </tr>
+                      <tr>
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300">دواعي الإحالة الطبية:</td>
+                        <td className="p-2.5 font-extrabold text-blue-800">{activeReferralPrint.reason}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded border border-slate-200 mt-4">
+                  <span className="font-bold text-slate-800 block mb-1">📋 توجيهات الشؤون الطبية باللواء:</span>
+                  <p className="text-slate-600 text-[11px]">
+                    يتم نقل المريض بوسائل النقل التابعة للكتيبة وتحت إشراف مساعد طبيب مرخص. يلتزم الفرد بتسليم التقرير الطبي المعتمد فور عودته لقسم الشؤون الطبية باللواء 43 لتسجيل الحالة وقفل الإحالة.
+                  </p>
+                </div>
+              </div>
+
+              {/* Signatures & Stamps */}
+              <div className="grid grid-cols-2 gap-6 mt-12 text-xs border-t border-slate-300 pt-6">
+                <div className="text-center space-y-12">
+                  <p className="font-bold">توقيع رئيس الشعبة الطبية للواء 43</p>
+                  <div>
+                    <p className="font-extrabold underline">الملازم أول طبيب / وضاح اليافعي</p>
+                    <p className="text-[10px] text-slate-500">مكتب الطبابة الميدانية</p>
+                  </div>
+                </div>
+                <div className="text-center space-y-4 flex flex-col items-center justify-between">
+                  <p className="font-bold">الختم والترميز العسكري</p>
+                  <div className="border p-2 rounded bg-slate-50 font-mono text-[9px] flex flex-col items-center gap-1 border-slate-300">
+                    <span className="font-bold tracking-widest text-slate-600">★ L43-MED-REF-{activeReferralPrint.id} ★</span>
+                    <div className="w-32 h-6 bg-slate-400 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #111, #111 2px, #fff 2px, #fff 6px)' }} />
+                    <span className="text-[8px] text-emerald-600 font-bold">مصدق ومحمي محلياً</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Print and Actions */}
+              <div className="mt-8 flex justify-end gap-3 print:hidden">
+                <button
+                  onClick={() => window.print()}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة الخطاب الورقي</span>
+                </button>
+                <button
+                  onClick={() => setActiveReferralPrint(null)}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
+                >
+                  إغلاق المعاينة
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Referral Creation Interface */
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Column */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm lg:col-span-2 space-y-5">
+                <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <h3 className="font-black text-slate-900 dark:text-white text-base">إصدار إحالة طبية خارجية جديدة</h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">توليد خطاب رسمي موجه للمستشفيات العسكرية لتوفير الرعاية الطبية للأفراد.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Soldier selection */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">تحديد الفرد المحال</label>
+                    <select
+                      value={referralSoldierId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setReferralSoldierId(val);
+                        if (val !== 'custom') {
+                          const r = records.find(item => item.id === val);
+                          if (r) {
+                            setReferralCustomName(r.name);
+                            setReferralCustomRank(r.rank);
+                            setReferralCustomUnit(r.unit || 'الكتيبة الأولى');
+                            if (r.diagnosis) {
+                              setReferralReason(`متابعة وعلاج: ${r.diagnosis}`);
+                            }
+                          }
+                        } else {
+                          setReferralCustomName('');
+                          setReferralCustomRank('جندي');
+                          setReferralCustomUnit('الكتيبة الأولى');
+                        }
+                      }}
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                    >
+                      <option value="custom">✍️ إدخال بيانات فرد يدوي غير مسجل إجازة</option>
+                      {records.map(r => (
+                        <option key={r.id} value={r.id}>{r.rank} / {r.name} ({r.unit || 'بدون كتيبة'})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {referralSoldierId === 'custom' && (
+                    <>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">الاسم الكامل للفرد</label>
+                        <input
+                          type="text"
+                          value={referralCustomName}
+                          onChange={(e) => setReferralCustomName(e.target.value)}
+                          placeholder="الاسم الرباعي للفرد"
+                          className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white text-right"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">الرتبة العسكرية</label>
+                        <select
+                          value={referralCustomRank}
+                          onChange={(e) => setReferralCustomRank(e.target.value)}
+                          className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 text-right"
+                        >
+                          {['جندي', 'عريف', 'رقيب', 'رقيب أول', 'ملازم', 'ملازم أول', 'نقيب', 'رائد', 'مقدم', 'عقيد', 'عميد'].map(r => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">الكتيبة / الوحدة</label>
+                        <select
+                          value={referralCustomUnit}
+                          onChange={(e) => setReferralCustomUnit(e.target.value)}
+                          className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 text-right"
+                        >
+                          {['الكتيبة الأولى', 'الكتيبة الثانية', 'الكتيبة الثالثة', 'الكتيبة الرابعة', 'مقر القيادة للواء', 'سرية الإشارة والاتصالات', 'الاستطلاع والاستخبارات', 'كتيبة الإمداد والتموين', 'الطبابة والخدمات الطبية'].map(u => (
+                            <option key={u} value={u}>{u}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Hospital Selection */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">المستشفى المستقبل للحالة</label>
+                    <select
+                      value={referralHospital}
+                      onChange={(e) => setReferralHospital(e.target.value)}
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 text-right"
+                    >
+                      <option value="مستشفى باصهيب العسكري - عدن">مستشفى باصهيب العسكري - عدن</option>
+                      <option value="مستشفى عبود العسكري - عدن">مستشفى عبود العسكري - عدن</option>
+                      <option value="المستشفى العسكري بمأرب العام">المستشفى العسكري بمأرب العام</option>
+                      <option value="مستشفى الساحل الغربي الميداني - المخا">مستشفى الساحل الغربي الميداني - المخا</option>
+                      <option value="مستشفى الجمهورية التعليمي - عدن">مستشفى الجمهورية التعليمي - عدن</option>
+                      <option value="المستشفى الميداني لقوات العمالقة - باب المندب">المستشفى الميداني لقوات العمالقة - باب المندب</option>
+                    </select>
+                  </div>
+
+                  {/* Referral Reason */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">دواعي الإحالة الطبية التفصيلية</label>
+                    <input
+                      type="text"
+                      value={referralReason}
+                      onChange={(e) => setReferralReason(e.target.value)}
+                      placeholder="مثال: إجراء أشعة رنين مغناطيسي للعمود الفقري ومراجعة الاستشاري المختص"
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 text-right"
+                    />
+                  </div>
+
+                  {/* Additional Clinical Notes */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">ملاحظات طبية أو قيود الإخلاء</label>
+                    <textarea
+                      value={referralNotes}
+                      onChange={(e) => setReferralNotes(e.target.value)}
+                      placeholder="مثال: الفرد يعاني من ألم مستمر ويحتاج مرافقة طبية مساعدة بالسيارة أو الإخلاء."
+                      rows={2}
+                      className="w-full text-xs p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 text-right"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                  <button
+                    onClick={() => {
+                      const nameToUse = referralSoldierId === 'custom' ? referralCustomName : records.find(item => item.id === referralSoldierId)?.name;
+                      if (!nameToUse || !nameToUse.trim()) {
+                        if (triggerToast) triggerToast('يرجى تحديد اسم الفرد أولاً', 'error');
+                        return;
+                      }
+                      if (!referralReason.trim()) {
+                        if (triggerToast) triggerToast('يرجى إدخال دواعي الإحالة الطبية', 'error');
+                        return;
+                      }
+
+                      const newRef = {
+                        id: `REF-43-${Math.floor(1000 + Math.random() * 9000)}`,
+                        name: nameToUse.trim(),
+                        rank: referralSoldierId === 'custom' ? referralCustomRank : records.find(item => item.id === referralSoldierId)?.rank || 'جندي',
+                        unit: referralSoldierId === 'custom' ? referralCustomUnit : records.find(item => item.id === referralSoldierId)?.unit || 'الكتيبة الأولى',
+                        hospital: referralHospital,
+                        reason: referralReason.trim(),
+                        date: new Date().toISOString().split('T')[0]
+                      };
+
+                      const updatedList = [newRef, ...recentReferrals];
+                      setRecentReferrals(updatedList);
+                      localStorage.setItem('military_recent_referrals', JSON.stringify(updatedList));
+
+                      if (triggerToast) triggerToast('تم تسجيل وإصدار الإحالة الطبية بنجاح', 'success');
+                      setActiveReferralPrint(newRef);
+                    }}
+                    className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>حفظ وتسجيل خطاب الإحالة</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* History Column */}
+              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <h4 className="font-bold text-slate-900 dark:text-white text-xs border-b border-slate-100 dark:border-slate-800 pb-2">📂 سجل الإحالات الأخيرة المعتمدة</h4>
+                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                  {recentReferrals.map((ref) => (
+                    <div key={ref.id} className="p-3 rounded-xl border border-slate-150 dark:border-slate-850 bg-slate-50/40 dark:bg-slate-950/20 hover:border-blue-500/35 transition-all text-right space-y-2">
+                      <div className="flex justify-between items-center text-[10px] font-bold">
+                        <span className="text-blue-600 font-mono">{ref.id}</span>
+                        <span className="text-slate-400 font-mono">{ref.date}</span>
+                      </div>
+                      <p className="font-extrabold text-xs text-slate-800 dark:text-slate-100">{ref.rank} / {ref.name}</p>
+                      <div className="text-[10px] text-slate-500 space-y-1">
+                        <p>🏥 المستشفى: <span className="font-bold text-slate-700 dark:text-slate-300">{ref.hospital}</span></p>
+                        <p className="truncate">📋 السبب: {ref.reason}</p>
+                      </div>
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-1.5">
+                        <button
+                          onClick={() => {
+                            const updatedList = recentReferrals.filter(item => item.id !== ref.id);
+                            setRecentReferrals(updatedList);
+                            localStorage.setItem('military_recent_referrals', JSON.stringify(updatedList));
+                            if (triggerToast) triggerToast('تم حذف سجل الإحالة', 'info');
+                          }}
+                          className="px-2 py-1 hover:bg-rose-50 text-rose-500 rounded text-[10px] font-bold"
+                        >
+                          حذف السجل
+                        </button>
+                        <button
+                          onClick={() => setActiveReferralPrint(ref)}
+                          className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                        >
+                          <Printer className="w-3 h-3" />
+                          <span>معاينة وطباعة</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* 13. Reassignment & Light-Duty Protocol */}
+      {activeModalId === 'reassignment' && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6 max-w-4xl mx-auto text-right"
+        >
+          {activeReassignPrint ? (
+            /* Printable Order Slip Preview */
+            <div className="bg-white text-slate-900 p-8 rounded-2xl border-4 border-double border-slate-800 shadow-lg relative max-w-2xl mx-auto font-sans print:border-0 print:shadow-none print:p-0">
+              {/* Header and Logo simulation */}
+              <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-6">
+                <div className="text-left space-y-1 text-[11px]">
+                  <p className="font-bold">أمر إداري رقم: {activeReassignPrint.id}</p>
+                  <p className="font-bold font-sans">التاريخ المصدق: {activeReassignPrint.date}</p>
+                  <p className="font-bold">الصلاحية: مفعول فوري</p>
+                </div>
+                <div className="text-center space-y-1">
+                  <h2 className="text-sm font-black">الجمهورية اليمنية</h2>
+                  <h3 className="text-xs font-bold">قيادة قوات العمالقة الجنوبية - اللواء 43 عمالقة</h3>
+                  <h4 className="text-[11px] font-bold text-slate-700">شعبة العمليات والتكليف الصحي الإداري</h4>
+                </div>
+              </div>
+
+              <div className="text-center my-6">
+                <h1 className="text-base font-black border border-slate-900 px-6 py-2.5 bg-slate-50 uppercase tracking-wider rounded">
+                  قرار إداري وصحي بتكليف بمهمة عسكرية بديلة خفيفة
+                </h1>
+              </div>
+
+              <div className="space-y-4 text-xs leading-relaxed mb-8">
+                <p className="text-justify font-bold leading-relaxed text-slate-850">
+                  بناءً على التقرير الطبي وتوصية رئيس لجنة الشؤون الطبية باللواء 43 عمالقة، وبموجب متطلبات المحافظة على الجاهزية الطبية وتوفير العناية الكافية لمنتسبي اللواء لضمان الاستشفاء التام للجرحى والمصابين، يُقرر تكليف الفرد الموضح بياناته بالمهام الخفيفة البديلة المؤقتة وفق الصياغة التالية:
+                </p>
+
+                {/* Soldier info block */}
+                <div className="border border-slate-400 rounded-lg overflow-hidden my-4 text-xs">
+                  <table className="w-full text-right border-collapse">
+                    <tbody>
+                      <tr className="border-b border-slate-300">
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300 w-1/3">الاسم الكامل للفرد:</td>
+                        <td className="p-2.5 font-extrabold">{activeReassignPrint.name}</td>
+                      </tr>
+                      <tr className="border-b border-slate-300">
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300">الرتبة والكتيبة الحالية:</td>
+                        <td className="p-2.5 font-bold">{activeReassignPrint.rank} / {activeReassignPrint.unit}</td>
+                      </tr>
+                      <tr className="border-b border-slate-300">
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300">المهمة الخفيفة البديلة المكلف بها:</td>
+                        <td className="p-2.5 font-extrabold text-amber-800">{activeReassignPrint.duty}</td>
+                      </tr>
+                      <tr className="border-b border-slate-300">
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300">فترة التكليف الصحي المؤقت:</td>
+                        <td className="p-2.5 font-bold">{activeReassignPrint.duration} يوماً (تبدأ من تاريخ القرار)</td>
+                      </tr>
+                      <tr>
+                        <td className="bg-slate-50 p-2.5 font-bold border-l border-slate-300">قيود الحركة المانعة:</td>
+                        <td className="p-2.5 font-bold text-slate-700">{activeReassignPrint.notes || 'يُعفى الفرد بالكامل من التدريب العنيف والتحركات والوقوف المستمر، ويوزع بمهام لا تتطلب مجهود عضلاني شاق.'}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="font-bold text-slate-800">توجيه عام لقادة الكتائب والسرايا:</p>
+                <p className="text-[11px] text-justify text-slate-600 bg-slate-50 p-3 rounded border border-slate-200">
+                  على قائد كتيبة الفرد المكلف تسهيل وتذليل عقبات التكليف والالتزام الصارم بالتوصية الطبية والامتناع القطعي عن إرسال الفرد لمهام قتالية ميدانية حادة أو نقاط تفتيش متقدمة لحين انتهاء فترة التكليف الطبي وصدور كشف اللياقة الفعلي.
+                </p>
+              </div>
+
+              {/* Signatures & Stamps */}
+              <div className="grid grid-cols-2 gap-6 mt-12 text-xs border-t border-slate-300 pt-6">
+                <div className="text-center space-y-12">
+                  <p className="font-bold">رئيس شعبة الشؤون الطبية للواء 43</p>
+                  <div>
+                    <p className="font-extrabold underline">الملازم أول طبيب / وضاح اليافعي</p>
+                    <p className="text-[10px] text-slate-500">مكتب التكليف الطبي والمتابعة</p>
+                  </div>
+                </div>
+                <div className="text-center space-y-12">
+                  <p className="font-bold">مصدق ومعتمد: قائد اللواء 43 عمالقة</p>
+                  <div>
+                    <p className="font-extrabold underline">العميد قيادة / اللواء 43 عمالقة</p>
+                    <p className="text-[10px] text-slate-500">الشعبة العسكرية للتنظيم والرقابة</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Print and Actions */}
+              <div className="mt-8 flex justify-end gap-3 print:hidden">
+                <button
+                  onClick={() => window.print()}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة القرار الإداري</span>
+                </button>
+                <button
+                  onClick={() => setActiveReassignPrint(null)}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
+                >
+                  إغلاق المعاينة
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Reassignment Creation Interface */
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800/80 shadow-sm lg:col-span-2 space-y-5">
+                <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <h3 className="font-black text-slate-900 dark:text-white text-base">تكليف بمهمة عسكرية خفيفة بديلة</h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">توليد وصياغة أمر إداري لتخفيف طبيعة الخدمة للأفراد المصابين في فترة النقاهة.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Soldier selection */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">اختر الفرد المصاب (من قوائم الإجازات المسجلة)</label>
+                    <select
+                      value={reassignSoldierId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setReassignSoldierId(val);
+                        const record = records.find(r => r.id === val);
+                        if (record) {
+                          setReassignNotes(`موصى به بسبب تشخيصه بـ (${record.diagnosis}). يمنع منعاً باتاً من رفع الأثقال والوقوف المستمر والركض لمسافات طويلة.`);
+                        }
+                      }}
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                    >
+                      <option value="">-- يرجى اختيار الفرد المستحق من السجلات --</option>
+                      {records.map(r => (
+                        <option key={r.id} value={r.id}>{r.rank} / {r.name} ({r.diagnosis})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Proposed Duty */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">الخدمة الخفيفة البديلة المقترحة</label>
+                    <select
+                      value={reassignDuty}
+                      onChange={(e) => setReassignDuty(e.target.value)}
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 text-right"
+                    >
+                      <option value="حراسة البوابات الداخلية للمقر الإداري والشعبي لللواء">🛡️ حراسة البوابات الداخلية للمقر الإداري والشعبي لللواء</option>
+                      <option value="أعمال كتابية ورقابة إدارية وأرشفة بقسم شعبة الشؤون الطبية">📋 أعمال كتابية وأرشفة بقسم شعبة الشؤون الطبية</option>
+                      <option value="مساعد أمين مخازن تموين الأدوية والتموين الغذائي للكتائب">📦 مساعد أمين مخازن تموين الأدوية والتموين الغذائي للكتائب</option>
+                      <option value="تأمين وإدارة عمليات الإشارة وغرفة العمليات اللاسلكية">📡 تأمين وإدارة عمليات الإشارة وغرفة العمليات اللاسلكية</option>
+                      <option value="مشرف جودة النظافة والتعقيم في العيادات والمستشفى الميداني">🧼 مشرف جودة التعقيم في العيادات والمستشفى الميداني</option>
+                    </select>
+                  </div>
+
+                  {/* Duration */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">فترة التكليف الإداري (بالأيام)</label>
+                    <input
+                      type="number"
+                      min="5"
+                      max="180"
+                      value={reassignDuration}
+                      onChange={(e) => setReassignDuration(Math.max(5, Number(e.target.value)))}
+                      className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-850 text-right"
+                    />
+                  </div>
+
+                  {/* Restriction notes */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">قيود وتوجيهات الحركة</label>
+                    <textarea
+                      value={reassignNotes}
+                      onChange={(e) => setReassignNotes(e.target.value)}
+                      placeholder="توجيهات وقيود ملزمة لقادة الفصيل لسلامة الفرد..."
+                      rows={2}
+                      className="w-full text-xs p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 text-right"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                  <button
+                    onClick={() => {
+                      if (!reassignSoldierId) {
+                        if (triggerToast) triggerToast('يرجى اختيار فرد مصاب من القائمة أولاً', 'error');
+                        return;
+                      }
+
+                      const selectedRec = records.find(r => r.id === reassignSoldierId);
+                      if (!selectedRec) return;
+
+                      const newReassign = {
+                        id: `RE-43-${Math.floor(5000 + Math.random() * 4000)}`,
+                        name: selectedRec.name,
+                        rank: selectedRec.rank,
+                        unit: selectedRec.unit || 'الكتيبة الأولى',
+                        duty: reassignDuty,
+                        duration: reassignDuration,
+                        notes: reassignNotes.trim(),
+                        date: new Date().toISOString().split('T')[0]
+                      };
+
+                      const updatedList = [newReassign, ...recentReassignments];
+                      setRecentReassignments(updatedList);
+                      localStorage.setItem('military_recent_reassignments', JSON.stringify(updatedList));
+
+                      if (triggerToast) triggerToast('تم إصدار وتسجيل قرار التكليف الإداري بنجاح', 'success');
+                      setActiveReassignPrint(newReassign);
+                    }}
+                    className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>حفظ وتوليد أمر التكليف العسكري</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* History list */}
+              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <h4 className="font-bold text-slate-900 dark:text-white text-xs border-b border-slate-100 dark:border-slate-800 pb-2">📂 سجل قرارات التكليف البديل النشطة</h4>
+                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                  {recentReassignments.map((re) => (
+                    <div key={re.id} className="p-3 rounded-xl border border-slate-150 dark:border-slate-850 bg-slate-50/40 dark:bg-slate-950/20 hover:border-amber-500/35 transition-all text-right space-y-2">
+                      <div className="flex justify-between items-center text-[10px] font-bold">
+                        <span className="text-amber-600 font-mono">{re.id}</span>
+                        <span className="text-slate-400 font-mono">{re.date}</span>
+                      </div>
+                      <p className="font-extrabold text-xs text-slate-800 dark:text-slate-100">{re.rank} / {re.name}</p>
+                      <div className="text-[10px] text-slate-500 space-y-1">
+                        <p className="truncate">🎯 المهمة البديلة: {re.duty}</p>
+                        <p>⏱️ المدة: <span className="font-bold text-slate-700 dark:text-slate-300">{re.duration} يوماً</span></p>
+                      </div>
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-1.5">
+                        <button
+                          onClick={() => {
+                            const updatedList = recentReassignments.filter(item => item.id !== re.id);
+                            setRecentReassignments(updatedList);
+                            localStorage.setItem('military_recent_reassignments', JSON.stringify(updatedList));
+                            if (triggerToast) triggerToast('تم حذف قرار التكليف من الأرشيف', 'info');
+                          }}
+                          className="px-2 py-1 hover:bg-rose-50 text-rose-500 rounded text-[10px] font-bold"
+                        >
+                          حذف
+                        </button>
+                        <button
+                          onClick={() => setActiveReassignPrint(re)}
+                          className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                        >
+                          <Printer className="w-3 h-3" />
+                          <span>طباعة</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* 14. Medical Campaign Supply Forecasting & Combat Logistics Planner */}
+      {activeModalId === 'campaign' && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6 max-w-4xl mx-auto text-right"
+        >
+          {showCampaignReport ? (
+            /* Printable Campaign Logistics Slip Preview */
+            <div className="bg-white text-slate-900 p-8 rounded-2xl border-2 border-slate-800 shadow-lg relative max-w-2xl mx-auto font-sans print:border-0 print:shadow-none print:p-0">
+              <div className="flex justify-between items-start border-b-2 border-slate-800 pb-4 mb-6">
+                <div className="text-left space-y-1 text-xs">
+                  <p className="font-bold">كود المخطط: CPL-{campaignForceSize}-{campaignDays}</p>
+                  <p className="font-bold">التاريخ: {new Date().toISOString().split('T')[0]}</p>
+                  <p className="font-bold">مستوى الخطورة: {campaignIntensity === 'high' ? 'قصف واشتباك مكثف' : campaignIntensity === 'medium' ? 'مهمة تمشيط وتأمين' : 'تدريب وعمل روتيني'}</p>
+                </div>
+                <div className="text-center space-y-1">
+                  <h2 className="text-sm font-black">الجمهورية اليمنية</h2>
+                  <h3 className="text-xs font-bold">قيادة قوات العمالقة الجنوبية - اللواء 43 عمالقة</h3>
+                  <h4 className="text-[11px] font-bold text-slate-700">مصلحة التموين اللوجستي والامداد الميداني</h4>
+                </div>
+              </div>
+
+              <div className="text-center my-6">
+                <h1 className="text-base font-black border border-slate-900 px-6 py-2.5 bg-slate-50 uppercase tracking-widest inline-block rounded">
+                  كشف وبيان الاحتياج الدوائي التقديري المعتمد للحملة
+                </h1>
+              </div>
+
+              <div className="space-y-4 text-xs leading-relaxed mb-8">
+                <p className="text-justify font-bold text-slate-850">
+                  بناءً على معايير اللوجستيات العسكرية والصحية المعتمدة للعمليات الميدانية والجهوزية الطبية لقوات العمالقة الجنوبية باللواء 43، تم احتساب الاحتياج التقديري الدقيق لقوة قوامها <span className="underline font-black">{campaignForceSize} فرد</span> في مهمة مستمرة مدتها <span className="underline font-black">{campaignDays} يوماً</span> بمستوى حركية واشتباك <span className="font-black text-rose-700">{campaignIntensity === 'high' ? 'عالي (هجوم مباشر)' : campaignIntensity === 'medium' ? 'متوسط (مناوشات وتأمين)' : 'هادئ (دفاع وتأمين بوابات)'}</span>:
+                </p>
+
+                {/* Logistics results table */}
+                <div className="border border-slate-450 rounded-lg overflow-hidden my-4">
+                  <table className="w-full text-xs text-right border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-400">
+                        <th className="p-2.5 font-bold border-l border-slate-300 w-2/5">الصنف اللوجستي</th>
+                        <th className="p-2.5 font-bold border-l border-slate-300 text-center">الكمية المطلوبة</th>
+                        <th className="p-2.5 font-bold border-l border-slate-300 text-center">الوحدة الدوائية</th>
+                        <th className="p-2.5 font-bold text-center">دواعي الاستخدام الميداني</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-slate-300">
+                        <td className="p-2.5 font-bold border-l border-slate-300">عواصب نزيف شريانية تكتيكية (TCT/CAT)</td>
+                        <td className="p-2.5 font-black text-center border-l border-slate-300 font-sans">
+                          {Math.ceil(campaignForceSize * (campaignIntensity === 'high' ? 0.35 : campaignIntensity === 'medium' ? 0.15 : 0.05))}
+                        </td>
+                        <td className="p-2.5 text-center border-l border-slate-300 font-sans">عاصبة تكتيكية</td>
+                        <td className="p-2.5">وقف فوري لنزيف الشرايين بالأطراف أثناء الاشتباك.</td>
+                      </tr>
+                      <tr className="border-b border-slate-300">
+                        <td className="p-2.5 font-bold border-l border-slate-300">ضمادات ضاغطة ميدانية معقمة</td>
+                        <td className="p-2.5 font-black text-center border-l border-slate-300 font-sans">
+                          {Math.ceil(campaignForceSize * campaignDays * (campaignIntensity === 'high' ? 0.12 : campaignIntensity === 'medium' ? 0.05 : 0.01))}
+                        </td>
+                        <td className="p-2.5 text-center border-l border-slate-300 font-sans">ضمادة ضاغطة</td>
+                        <td className="p-2.5">الضماد والضغط المباشر على الحروق والجروح المفتوحة.</td>
+                      </tr>
+                      <tr className="border-b border-slate-300">
+                        <td className="p-2.5 font-bold border-l border-slate-300">شاش وقف النزيف السريع (QuikClot)</td>
+                        <td className="p-2.5 font-black text-center border-l border-slate-300 font-sans">
+                          {Math.ceil(campaignForceSize * (campaignIntensity === 'high' ? 0.2 : campaignIntensity === 'medium' ? 0.08 : 0.02))}
+                        </td>
+                        <td className="p-2.5 text-center border-l border-slate-300 font-sans">شريط شاش</td>
+                        <td className="p-2.5">المساعدة المباشرة على تخثر وحشو الجروح العميقة بالجسد.</td>
+                      </tr>
+                      <tr className="border-b border-slate-300">
+                        <td className="p-2.5 font-bold border-l border-slate-300">حقن مضاد حيوي (Ceftriaxone 1g)</td>
+                        <td className="p-2.5 font-black text-center border-l border-slate-300 font-sans">
+                          {Math.ceil(campaignForceSize * (campaignIntensity === 'high' ? 0.15 : campaignIntensity === 'medium' ? 0.06 : 0.01) * campaignDays)}
+                        </td>
+                        <td className="p-2.5 text-center border-l border-slate-300 font-sans">حقنة</td>
+                        <td className="p-2.5">منع الالتهاب وتجرثم جروح الشظايا والإصابات العميقة.</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold border-l border-slate-300">محلول ملحي وريدي (Normal Saline 500ml)</td>
+                        <td className="p-2.5 font-black text-center border-l border-slate-300 font-sans">
+                          {Math.ceil(campaignForceSize * (campaignIntensity === 'high' ? 0.25 : campaignIntensity === 'medium' ? 0.1 : 0.02))}
+                        </td>
+                        <td className="p-2.5 text-center border-l border-slate-300 font-sans">قنينة</td>
+                        <td className="p-2.5">تعويض سوائل الدم ومنع الصدمة الوعائية للمصابين.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="bg-slate-100 p-3 rounded text-[11px] text-slate-700 border border-slate-200">
+                  <span className="font-bold block mb-0.5">⚠️ توصية الضباط المشرفين بالشعبة اللوجستية:</span>
+                  <p>تعتبر هذه الأرقام كمية الأمان التمويني الأولية للكتيبة. يوصى بتمثيل مساعد طبيب ميداني لكل سرية يرافقه حقيبة طبية متكاملة مصدقة الختم ومعدة للاستخدام العاجل بالجبهة.</p>
+                </div>
+              </div>
+
+              {/* Signatures & Stamps */}
+              <div className="grid grid-cols-2 gap-6 mt-12 text-xs border-t border-slate-300 pt-6">
+                <div className="text-center space-y-12">
+                  <p className="font-bold">الملازم الصيدلي / مدير مصلحة التموين</p>
+                  <div>
+                    <p className="font-extrabold underline">الملازم طبيب / خالد الوالي</p>
+                    <p className="text-[10px] text-slate-500">مكتب الامداد الدوائي - اللواء 43</p>
+                  </div>
+                </div>
+                <div className="text-center space-y-4 flex flex-col items-center justify-between">
+                  <p className="font-bold">المصادقة العسكرية والتدقيق</p>
+                  <div className="border p-2 rounded bg-slate-50 font-mono text-[9px] flex flex-col items-center gap-1 border-slate-300">
+                    <span className="font-bold tracking-wider text-slate-600">★ L43-LOG-PLANNER ★</span>
+                    <span className="text-[8px] text-emerald-600 font-bold">بوابة اللوجستيات المعتمدة</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="mt-8 flex justify-end gap-3 print:hidden">
+                <button
+                  onClick={() => window.print()}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة بيان الاحتياج الطبي</span>
+                </button>
+                <button
+                  onClick={() => setShowCampaignReport(false)}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
+                >
+                  العودة للمحاكي التفاعلي
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Interactive Simulation UI */
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-right">
+              {/* Simulator Parameters Input Card */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5 lg:col-span-1">
+                <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <h3 className="font-black text-slate-900 dark:text-white text-base">محاكي تموين العمليات الحربية</h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">توقع الاحتياج من عواصب النزيف والضمادات والمسكنات التكتيكية في الجبهة.</p>
+                </div>
+
+                {/* Force Size Slider */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">{campaignForceSize} فرد</span>
+                    <label className="font-bold text-slate-600 dark:text-slate-300">قوام القوة المشاركة</label>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="1000"
+                    step="10"
+                    value={campaignForceSize}
+                    onChange={(e) => setCampaignForceSize(Number(e.target.value))}
+                    className="w-full accent-indigo-600 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>10 فرد (فصيل)</span>
+                    <span>1000 فرد (لواء كامل)</span>
+                  </div>
+                </div>
+
+                {/* Duration Slider */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">{campaignDays} أيام</span>
+                    <label className="font-bold text-slate-600 dark:text-slate-300">مدة المهمة القتالية المجدولة</label>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="90"
+                    value={campaignDays}
+                    onChange={(e) => setCampaignDays(Number(e.target.value))}
+                    className="w-full accent-indigo-600 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>يوم واحد</span>
+                    <span>90 يوماً</span>
+                  </div>
+                </div>
+
+                {/* Combat Intensity Selection */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">الجهوزية ومستوى خطر الجبهة</label>
+                  <select
+                    value={campaignIntensity}
+                    onChange={(e) => setCampaignIntensity(e.target.value as any)}
+                    className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white text-right"
+                  >
+                    <option value="low">🕊️ منخفض (تدريب، دوريات دفاعية خلف الجبهة)</option>
+                    <option value="medium">⚔️ متوسط (مناوشات متبادلة، حملة تأمين تمشيطية)</option>
+                    <option value="high">🔥 عالي جداً (هجوم واشتباك والتحام مباشر مع الجبهات)</option>
+                  </select>
+                </div>
+
+                {/* Campaign Notes */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">اسم أو تلميح الحملة العسكرية</label>
+                  <input
+                    type="text"
+                    value={campaignNotes}
+                    onChange={(e) => setCampaignNotes(e.target.value)}
+                    className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-right"
+                  />
+                </div>
+              </div>
+
+              {/* Simulation Output and Pharmacy stock cross-match */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm lg:col-span-2 space-y-5">
+                <div className="border-b border-slate-100 dark:border-slate-800 pb-2">
+                  <h3 className="font-black text-slate-900 dark:text-white text-base">📋 مقارنة التوقع الطبي بمخزون صيدلية اللواء الحالية</h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">يتحقق النظام تلقائياً من مخزون الصيدلية الميدانية الفعلي ويبلغ عن أي عجز فوري لتداركه.</p>
+                </div>
+
+                {/* Interactive list of supplies calculated */}
+                <div className="space-y-4">
+                  {[
+                    {
+                      name: "عاصبة شريانية تكتيكية (لوقف النزيف)",
+                      arabicName: "عاصبة شريانية تكتيكية (لوقف النزيف)",
+                      required: Math.ceil(campaignForceSize * (campaignIntensity === 'high' ? 0.35 : campaignIntensity === 'medium' ? 0.15 : 0.05)),
+                      defaultStock: 65,
+                      unit: "عاصبة"
+                    },
+                    {
+                      name: "Normal Saline 500ml",
+                      arabicName: "محلول ملحي مغذي 500 مل",
+                      required: Math.ceil(campaignForceSize * (campaignIntensity === 'high' ? 0.25 : campaignIntensity === 'medium' ? 0.1 : 0.02)),
+                      defaultStock: 120,
+                      unit: "قنينة"
+                    },
+                    {
+                      name: "سيفتركسون 1جم (حقن مضاد حيوي)",
+                      arabicName: "سيفتركسون 1جم (حقن مضاد حيوي)",
+                      required: Math.ceil(campaignForceSize * (campaignIntensity === 'high' ? 0.15 : campaignIntensity === 'medium' ? 0.06 : 0.01) * campaignDays),
+                      defaultStock: 90,
+                      unit: "حقنة"
+                    }
+                  ].map((supply, sIdx) => {
+                    // Try to get dynamic stock from pharmacy
+                    const savedPharmacyItemsStr = localStorage.getItem('military_pharmacy_items');
+                    let actualStock = supply.defaultStock;
+                    if (savedPharmacyItemsStr) {
+                      try {
+                        const parsed = JSON.parse(savedPharmacyItemsStr);
+                        const found = parsed.find((p: any) => 
+                          p.arabicName.includes(supply.arabicName) || 
+                          p.name.toLowerCase().includes(supply.name.toLowerCase()) ||
+                          supply.name.toLowerCase().includes(p.name.toLowerCase())
+                        );
+                        if (found) actualStock = found.quantity;
+                      } catch(e) {}
+                    }
+
+                    const hasDeficit = actualStock < supply.required;
+                    const deficitQty = supply.required - actualStock;
+                    const stockPercent = Math.min(100, (actualStock / supply.required) * 100);
+
+                    return (
+                      <div key={sIdx} className="p-4 rounded-xl border border-slate-150 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-950/20 text-right space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-extrabold text-slate-800 dark:text-slate-100">{supply.arabicName}</span>
+                          <span className="font-bold text-slate-500 font-mono">الاحتياج: {supply.required} {supply.unit}</span>
+                        </div>
+
+                        {/* Stock status bar */}
+                        <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              hasDeficit ? 'bg-rose-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${stockPercent}%` }}
+                          />
+                        </div>
+
+                        <div className="flex justify-between items-center text-[11px]">
+                          <div>
+                            {hasDeficit ? (
+                              <span className="text-rose-600 font-bold flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 animate-pulse shrink-0" />
+                                <span>عجز بالمستودع: -{deficitQty} {supply.unit}</span>
+                              </span>
+                            ) : (
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                <span>المخزون كافٍ ومؤمن</span>
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-bold text-slate-500 font-sans">
+                            المخزون الفعلي بالصيدلية: {actualStock} {supply.unit}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      if (triggerToast) triggerToast('تمت محاكاة وحساب كميات الحملة الطبية الميدانية بنجاح', 'success');
+                      setShowCampaignReport(true);
+                    }}
+                    className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>توليد ومعاينة طلب بيان التعبئة الرسمي</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* Monthly Sick Leave Days Tracker Modal */}
+      {activeModalId === 'monthly-tracker' && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800/80 p-6 md:p-8 shadow-md text-right max-w-5xl mx-auto w-full relative"
+        >
+          {/* Subtle top-glow accent line */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-l from-pink-500 via-rose-500 to-indigo-500" />
+
+          {/* Modal Header */}
+          <div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800 mb-6 gap-3">
+            <button
+              onClick={() => {
+                setActiveModalId(null);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 transition-all text-left"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2.5 justify-end">
+              <div className="text-right">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">التقرير والمتابع الشهري للإجازات والعمل</h3>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  بيان وتتبع إجمالي أيام الإجازات بجميع أنواعها المرفوعة والممنوحة لكل فرد في اللواء 43 عمالقة شهرياً
+                </p>
+              </div>
+              <div className="p-2.5 bg-pink-50 dark:bg-pink-950/40 text-pink-500 rounded-xl">
+                <CalendarDays className="w-5 h-5 animate-pulse" />
+              </div>
+            </div>
+          </div>
+
+          {/* Year and Overview Year-Trend BarChart Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+            {/* Year Selector & Quick Stats */}
+            <div className="lg:col-span-4 bg-slate-50 dark:bg-slate-950 p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 flex flex-col justify-between">
+              <div>
+                <label className="block text-xs font-black text-slate-700 dark:text-slate-300 mb-2">اختر العام الميلادي للتتبع:</label>
+                <div className="flex gap-2 mb-3 justify-end">
+                  {[2024, 2025, 2026, 2027].map((yr) => (
+                    <button
+                      key={yr}
+                      onClick={() => setTrackerYear(yr)}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        trackerYear === yr
+                          ? 'bg-pink-500 text-white shadow-sm'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+                      }`}
+                    >
+                      {yr}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="block text-xs font-black text-slate-700 dark:text-slate-300 mb-2 mt-3 text-right">نوع الإجازة للتتبع والتقرير:</label>
+                <div className="flex flex-wrap gap-1.5 mb-4 justify-end">
+                  {[
+                    { id: 'all', label: 'الكل (جميع الإجازات)' },
+                    { id: 'مريض', label: 'مرضية' },
+                    { id: 'مرافق', label: 'مرافق' },
+                    { id: 'مرض قريب', label: 'مرض قريب' },
+                    { id: 'حادث', label: 'حادث' }
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setTrackerLeaveType(t.id as any)}
+                      className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${
+                        trackerLeaveType === t.id
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="text-right space-y-2 mt-4 text-slate-700 dark:text-slate-300">
+                  <h4 className="text-xs font-black text-slate-850 dark:text-slate-200 border-b pb-2 mb-2 dark:border-slate-800">إحصائيات العام {trackerYear} بالكامل</h4>
+                  <p className="text-xs text-slate-500 flex justify-between flex-row-reverse">
+                    <span>إجمالي أيام الإجازات:</span>
+                    <strong className="font-mono text-pink-500">
+                      {monthlyOverlappingStats.reduce((sum, m) => sum + m.totalDays, 0)} يوم
+                    </strong>
+                  </p>
+                  <p className="text-xs text-slate-500 flex justify-between flex-row-reverse">
+                    <span>إجمالي الحالات المسجلة:</span>
+                    <strong className="font-mono text-indigo-500">
+                      {monthlyOverlappingStats.reduce((sum, m) => sum + m.casesCount, 0)} حالة
+                    </strong>
+                  </p>
+                  <p className="text-xs text-slate-500 flex justify-between flex-row-reverse">
+                    <span>أعلى الشهور إجازات:</span>
+                    <strong className="text-slate-800 dark:text-slate-200">
+                      {(() => {
+                        const maxM = [...monthlyOverlappingStats].sort((a,b) => b.totalDays - a.totalDays)[0];
+                        return maxM && maxM.totalDays > 0 ? `${maxM.monthName} (${maxM.totalDays} يوم)` : 'لا يوجد';
+                      })()}
+                    </strong>
+                  </p>
+                </div>
+              </div>
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 mt-4 text-[10px] text-slate-400">
+                💡 يحتسب هذا المحلل الأيام الفعلية الواقعة ضمن الشهر المحدد، بما في ذلك فترات الإجازات المتداخلة التي بدأت في شهر سابق واستمرت فيه.
+              </div>
+            </div>
+
+            {/* Recharts BarChart showing 12 months trend */}
+            <div className="lg:col-span-8 bg-slate-50 dark:bg-slate-950 p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800/60">
+              <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 text-right mb-4">
+                مخطط التوزيع السنوي لإجمالي أيام الإجازات المرضية لعام {trackerYear}
+              </h4>
+              <div className="h-44 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyOverlappingStats} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                    <XAxis
+                      dataKey="monthName"
+                      tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 'bold' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-slate-900 text-white p-2.5 rounded-lg border border-slate-800 shadow-xl text-right text-[11px] leading-relaxed">
+                              <p className="font-bold border-b border-slate-800 pb-1 mb-1 text-pink-400">{data.monthName}</p>
+                              <p>أيام الإجازات: <span className="font-mono font-bold text-amber-400">{data.totalDays} يوم</span></p>
+                              <p>عدد الحالات: <span className="font-mono font-bold text-indigo-400">{data.casesCount} حالة</span></p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar
+                      dataKey="totalDays"
+                      radius={[4, 4, 0, 0]}
+                    >
+                      {monthlyOverlappingStats.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.monthNum === trackerMonth ? '#ec4899' : '#6366f1'}
+                          className="cursor-pointer"
+                          onClick={() => setTrackerMonth(entry.monthNum)}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-[10px] text-slate-400 text-center mt-2">
+                انقر على أي شريط عمودي في المخطط لتحديد هذا الشهر وعرض بياناته التفصيلية بالأسفل
+              </p>
+            </div>
+          </div>
+
+          {/* Month Selector Cards Row */}
+          <div className="mb-8">
+            <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 text-right mb-3">اختر الشهر للتصفح الفوري وعرض البيان التفصيلي:</h4>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+              {monthlyOverlappingStats.map((m) => (
+                <button
+                  key={m.monthNum}
+                  onClick={() => setTrackerMonth(m.monthNum)}
+                  className={`p-3 rounded-xl border text-right transition-all flex flex-col justify-between relative overflow-hidden ${
+                    trackerMonth === m.monthNum
+                      ? 'bg-pink-500/10 border-pink-500/40 text-pink-700 dark:text-pink-400 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-850'
+                  }`}
+                >
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-[9px] font-mono opacity-50">#{String(m.monthNum).padStart(2, '0')}</span>
+                    {m.totalDays > 0 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-100 dark:bg-pink-950/50 text-pink-600 dark:text-pink-400 font-bold">
+                        نشط
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 text-right">
+                    <p className="text-xs font-black">{m.monthName}</p>
+                    <p className="text-[11px] font-mono font-bold mt-1 text-slate-500 dark:text-slate-400">
+                      {m.totalDays} <span className="text-[9px]">يوم</span>
+                    </p>
+                  </div>
+                  {trackerMonth === m.monthNum && (
+                    <div className="absolute right-0 bottom-0 top-0 w-1 bg-pink-500" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Stats of Selected Month */}
+          <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mb-8 text-right">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      const leaveTypeLabel = trackerLeaveType === 'all' ? 'جميع أنواع الإجازات' : 
+                                             trackerLeaveType === 'مريض' ? 'الإجازات المرضية' : 
+                                             trackerLeaveType === 'مرافق' ? 'إجازات المرافقين' : 
+                                             trackerLeaveType === 'مرض قريب' ? 'إجازات مرض القريب' : 'إجازات الحوادث';
+                      const doc = printWindow.document;
+                      doc.write(`
+                        <html>
+                        <head>
+                          <title>تقرير ${leaveTypeLabel} لشهر ${trackerMonth}/${trackerYear}</title>
+                          <style>
+                            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; text-align: right; padding: 40px; color: #1e293b; }
+                            h1 { color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; font-size: 20px; }
+                            .meta { font-size: 12px; color: #64748b; margin-bottom: 30px; }
+                            .stats { display: grid; grid-template-cols: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+                            .stat-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; text-align: center; }
+                            .stat-val { font-size: 24px; font-weight: bold; color: #ec4899; margin-top: 5px; }
+                            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+                            th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: right; }
+                            th { background-color: #f1f5f9; font-weight: bold; }
+                            .footer { margin-top: 50px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+                          </style>
+                        </head>
+                        <body>
+                          <h1>بيان كشف ${leaveTypeLabel} المرفوعة والممنوحة - اللواء 43 عمالقة</h1>
+                          <p class="meta">الفترة المحددة: شهر ${trackerMonth} / عام ${trackerYear} | تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-YE')}</p>
+                          
+                          <div class="stats">
+                            <div class="stat-card"><div>إجمالي أيام الإجازات</div><div class="stat-val">${selectedMonthDetails.totalSickDays} يوماً</div></div>
+                            <div class="stat-card"><div>إجمالي الحالات النشطة</div><div class="stat-val">${selectedMonthDetails.totalCases} حالات</div></div>
+                            <div class="stat-card"><div>معدل الأيام / الحالة</div><div class="stat-val">${selectedMonthDetails.avgSickDays} يوم</div></div>
+                            <div class="stat-card"><div>أطول فترة إجازة فردية</div><div class="stat-val">${selectedMonthDetails.maxSickDays} يوم</div></div>
+                          </div>
+
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>اسم الفرد / الرتبة</th>
+                                <th>الكتيبة / الوحدة</th>
+                                <th>التشخيص / سبب الإجازة</th>
+                                <th>فترة الإجازة الكلية</th>
+                                <th>عدد أيامها هذا الشهر</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${
+                                selectedMonthDetails.matchingRecords.length > 0
+                                  ? selectedMonthDetails.matchingRecords.map(item => `
+                                      <tr>
+                                        <td>${item.record.rank} / ${item.record.name}</td>
+                                        <td>${item.record.unit || 'الكتيبة الأولى'}</td>
+                                        <td>${item.record.type === 'مريض' ? `مرضية (${item.record.diagnosis})` : item.record.type === 'مرافق' ? `مرافق (${item.record.diagnosis})` : item.record.type === 'مرض قريب' ? `مرض قريب (${item.record.diagnosis})` : `حادث (${item.record.diagnosis})`}</td>
+                                        <td>من ${item.record.startDate} إلى ${item.record.endDate}</td>
+                                        <td>${item.overlapDays} يوماً</td>
+                                      </tr>
+                                    `).join('')
+                                  : `<tr><td colspan="5" style="text-align:center;">لا توجد أي إجازات مسجلة في هذا الشهر لتصنيف: ${leaveTypeLabel}.</td></tr>`
+                              }
+                            </tbody>
+                          </table>
+
+                          <div class="footer">شعبة شؤون الأفراد والطبية - قيادة اللواء 43 عمالقة - نظام الأرشيف الذكي للإجازات والعمل</div>
+                        </body>
+                        </html>
+                      `);
+                      doc.close();
+                      printWindow.print();
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-755 dark:text-slate-200 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>طباعة الكشف للشهادة والعمل</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const headers = ['اسم الفرد', 'الرتبة', 'الكتيبة', 'التشخيص', 'تاريخ البدء', 'تاريخ الانتهاء', 'أيام هذا الشهر'];
+                    const rows = selectedMonthDetails.matchingRecords.map(item => [
+                      item.record.name,
+                      item.record.rank,
+                      item.record.unit || 'الكتيبة الأولى',
+                      item.record.diagnosis,
+                      item.record.startDate,
+                      item.record.endDate,
+                      item.overlapDays
+                    ]);
+                    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+                      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `تقرير_إجازات_${trackerMonth}_${trackerYear}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-755 dark:text-slate-200 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>تصدير CSV</span>
+                </button>
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                  كشف وبيان الإجازات المرفوعة لشهر {monthlyOverlappingStats.find(m => m.monthNum === trackerMonth)?.monthName} / عام {trackerYear}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">يحتوي هذا الكشف على تفصيل الحالات الطبية وأيام الإجازات المستحقة لها في هذا الشهر</p>
+              </div>
+            </div>
+
+            {/* 4 Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="p-4 bg-gradient-to-br from-pink-500/5 to-transparent border border-pink-500/10 rounded-2xl">
+                <span className="text-[10px] text-slate-400 block">إجمالي أيام الإجازات الممنوحة</span>
+                <span className="text-xl font-mono font-black text-pink-600 dark:text-pink-400 block mt-1">
+                  {selectedMonthDetails.totalSickDays} <span className="text-xs">يوم إجازة</span>
+                </span>
+                <span className="text-[9px] text-slate-404 block mt-1">نشط ومستحق خلال الشهر</span>
+              </div>
+
+              <div className="p-4 bg-gradient-to-br from-indigo-500/5 to-transparent border border-indigo-500/10 rounded-2xl">
+                <span className="text-[10px] text-slate-404 block">إجمالي الحالات النشطة</span>
+                <span className="text-xl font-mono font-black text-indigo-600 dark:text-indigo-400 block mt-1">
+                  {selectedMonthDetails.totalCases} <span className="text-xs">حالات</span>
+                </span>
+                <span className="text-[9px] text-slate-404 block mt-1">أفراد استلموا إجازات</span>
+              </div>
+
+              <div className="p-4 bg-gradient-to-br from-amber-500/5 to-transparent border border-amber-500/10 rounded-2xl">
+                <span className="text-[10px] text-slate-404 block">معدل أيام الإجازة / الحالة</span>
+                <span className="text-xl font-mono font-black text-amber-600 dark:text-amber-400 block mt-1">
+                  {selectedMonthDetails.avgSickDays} <span className="text-xs">يوم / حالة</span>
+                </span>
+                <span className="text-[9px] text-slate-404 block mt-1">متوسط المدة لكل فرد</span>
+              </div>
+
+              <div className="p-4 bg-gradient-to-br from-emerald-500/5 to-transparent border border-emerald-500/10 rounded-2xl">
+                <span className="text-[10px] text-slate-404 block">أطول فترة نقاهة فردية</span>
+                <span className="text-xl font-mono font-black text-emerald-600 dark:text-emerald-400 block mt-1">
+                  {selectedMonthDetails.maxSickDays} <span className="text-xs">يوم</span>
+                </span>
+                <span className="text-[9px] text-slate-404 block mt-1">أقصى مدة استشفاء لفرد</span>
+              </div>
+            </div>
+
+            {/* Table of Details */}
+            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-slate-950/20">
+              {selectedMonthDetails.matchingRecords.length === 0 ? (
+                <div className="p-12 text-center text-slate-404 dark:text-slate-500">
+                  <CalendarDays className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
+                  <p className="text-sm font-bold">لا توجد إجازات مسجلة أو نشطة في هذا الشهر</p>
+                  <p className="text-xs mt-1">لم يتم رفع أي أيام إجازة تقع ضمن شهر {monthlyOverlappingStats.find(m => m.monthNum === trackerMonth)?.monthName} لعام {trackerYear}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-right border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
+                        <th className="p-3 font-black text-right">رتبة واسم الفرد</th>
+                        <th className="p-3 font-black text-right">الكتيبة / الوحدة</th>
+                        <th className="p-3 font-black text-right">التشخيص الطبي</th>
+                        <th className="p-3 font-black text-center">فترة الإجازة الكاملة</th>
+                        <th className="p-3 font-black text-center w-48">الأيام خلال هذا الشهر</th>
+                        <th className="p-3 font-black text-center">الحالة</th>
+                        <th className="p-3 font-black text-center no-print w-16">إجراء</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                      {selectedMonthDetails.matchingRecords.map(({ record, overlapDays, totalLeaveDuration }) => {
+                        // Calculate percentage of the month (approx 30 days) that this leave covers
+                        const daysInMonth = new Date(trackerYear, trackerMonth, 0).getDate();
+                        const monthPercentage = Math.round((overlapDays / daysInMonth) * 100);
+
+                        return (
+                          <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-850 dark:text-slate-200 transition-colors">
+                            <td className="p-3">
+                              <div className="font-bold">{record.name}</div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{record.rank}</div>
+                            </td>
+                            <td className="p-3 font-medium text-slate-600 dark:text-slate-400">{record.unit || 'الكتيبة الأولى'}</td>
+                            <td className="p-3">
+                              <span className="inline-block px-2 py-1 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-lg text-[11px] font-medium border border-rose-100 dark:border-rose-900/30">
+                                {record.diagnosis}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="font-mono text-slate-600 dark:text-slate-400">{record.startDate}</div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">إلى {record.endDate} ({totalLeaveDuration} يوم)</div>
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="font-mono font-bold text-pink-600 dark:text-pink-400 text-xs">
+                                  {overlapDays} <span className="text-[10px] text-slate-400 font-sans">يوماً</span>
+                                </span>
+                                <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                  <div 
+                                    className="bg-pink-500 h-full rounded-full" 
+                                    style={{ width: `${Math.min(100, monthPercentage)}%` }}
+                                  />
+                                </div>
+                                <span className="text-[9px] text-slate-400">{monthPercentage}% من أيام الشهر</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black ${
+                                record.contactStatus === 'confirmed'
+                                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                  : record.contactStatus === 'request_extension'
+                                  ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                  : record.contactStatus === 'pending'
+                                  ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20'
+                                  : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                              }`}>
+                                {record.contactStatus === 'confirmed'
+                                  ? 'حاضر/مؤكد'
+                                  : record.contactStatus === 'request_extension'
+                                  ? 'طلب تمديد'
+                                  : record.contactStatus === 'pending'
+                                  ? 'قيد الانتظار'
+                                  : 'متهرب/لا يرد'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center no-print">
+                              {onDelete && (
+                                <button
+                                  onClick={() => {
+                                    setRecordToDelete(record);
+                                    setDeleteModalOpen(true);
+                                  }}
+                                  title="حذف الإجازة نهائياً"
+                                  className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Quick Add Leave Record Panel */}
       {activeModalId === 'add-record' && (
         <motion.div
@@ -2883,6 +4982,67 @@ export default function Dashboard({ records, onUpdate, onAdd, setCurrentPage, tr
           }} todayStr={todayStr} />
         </motion.div>
       )}
+
+      {/* AI Bulk Import Panel */}
+      {activeModalId === 'ai-bulk' && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800/80 p-6 md:p-8 shadow-md text-right max-w-7xl mx-auto w-full relative"
+        >
+          {/* Subtle top-glow accent line */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-l from-violet-500 to-indigo-500" />
+          
+          <div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800 mb-6 gap-3">
+            <button
+              onClick={() => {
+                setActiveModalId(null);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 transition-all text-left cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2.5 justify-end">
+              <div className="text-right">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">التسجيل الجماعي الذكي بالذكاء الاصطناعي</h3>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">معالجة فورية وتلقائية للتقارير والكشوفات الطبية المتنوعة للواء 43</p>
+              </div>
+              <div className="p-2.5 bg-violet-50 dark:bg-violet-950/40 text-violet-500 rounded-xl">
+                <Sparkles className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          <AIBulkLeaves
+            onAddRecords={async (records) => {
+              if (onAdd) {
+                for (const rec of records) {
+                  await onAdd(rec);
+                }
+                setActiveModalId(null);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
+            }}
+            onClose={() => {
+              setActiveModalId(null);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            triggerToast={triggerToast}
+          />
+        </motion.div>
+      )}
+      <DeleteConfirmModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setRecordToDelete(null);
+        }}
+        onConfirm={executeDelete}
+        recordName={recordToDelete ? `${recordToDelete.rank} / ${recordToDelete.name}` : ''}
+        recordUnit={recordToDelete?.unit || 'اللواء 43 عمالقة'}
+        recordType={recordToDelete ? recordToDelete.type : ''}
+      />
     </div>
   );
 }

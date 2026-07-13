@@ -25,11 +25,26 @@ import {
   FileSpreadsheet,
   Upload,
   Download,
-  Check
+  Check,
+  Users
 } from 'lucide-react';
-import { PharmacyItem, PharmacyLog } from '../types';
+import { PharmacyItem, PharmacyLog, LeaveRecord } from '../types';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 
 interface PharmacyProps {
+  records?: LeaveRecord[];
+  onUpdateRecord?: (record: LeaveRecord) => Promise<void>;
   triggerToast: (text: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -211,7 +226,7 @@ const SEED_RECEIVED_MEDS: ReceivedMedication[] = [
   }
 ];
 
-export default function Pharmacy({ triggerToast }: PharmacyProps) {
+export default function Pharmacy({ records = [], onUpdateRecord, triggerToast }: PharmacyProps) {
   // Inventory state
   const [items, setItems] = useState<PharmacyItem[]>(() => {
     const saved = localStorage.getItem('military_pharmacy_items');
@@ -306,6 +321,18 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
   const [selectedMedId, setSelectedMedId] = useState('');
   const [selectedMedQty, setSelectedMedQty] = useState<number>(1);
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<DisbursementInvoice | null>(null);
+  const [selectedSoldierForDispenseId, setSelectedSoldierForDispenseId] = useState('');
+  const [soldierSearchTerm, setSoldierSearchTerm] = useState('');
+
+  // Suggested soldiers list for prescription links
+  const suggestedSoldiers = useMemo(() => {
+    if (!soldierSearchTerm.trim()) return [];
+    const query = soldierSearchTerm.toLowerCase();
+    return records.filter(r => 
+      r.name.toLowerCase().includes(query) ||
+      r.rank.toLowerCase().includes(query)
+    ).slice(0, 5);
+  }, [records, soldierSearchTerm]);
 
   const finalizeDispenseInvoice = () => {
     if (!invoiceRecipient.trim() || draftItems.length === 0) return;
@@ -382,12 +409,39 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
     // 5. Open this invoice in preview
     setSelectedInvoiceForView(newInvoice);
 
+    // Update soldier's history if linked to a specific soldier in LeaveRecord
+    if (selectedSoldierForDispenseId && onUpdateRecord) {
+      const targetSoldier = records.find(r => r.id === selectedSoldierForDispenseId);
+      if (targetSoldier) {
+        const medsSummary = invoiceItemsList.map(item => `${item.arabicName} (عدد ${item.quantity} ${item.unit})`).join('، ');
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+        
+        const updatedRecord: LeaveRecord = {
+          ...targetSoldier,
+          history: [
+            ...(targetSoldier.history || []),
+            {
+              date: dateStr,
+              action: 'تعديل',
+              details: `تم صرف مستلزمات وأدوية طبية بموجب الفاتورة (${serialNum}): [${medsSummary}].`
+            }
+          ]
+        };
+        onUpdateRecord(updatedRecord).catch(err => {
+          console.error("Failed to update soldier history for prescription:", err);
+        });
+      }
+    }
+
     // 6. Reset draft
     setInvoiceRecipient('');
     setInvoiceNotes('');
     setDraftItems([]);
     setSelectedMedId('');
     setSelectedMedQty(1);
+    setSelectedSoldierForDispenseId('');
+    setSoldierSearchTerm('');
 
     triggerToast(`تم بنجاح صرف الفاتورة (${serialNum}) وتحديث عهد المستودعات للكتيبة`, 'success');
   };
@@ -422,8 +476,8 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
     localStorage.setItem('military_pharmacy_received', JSON.stringify(receivedMeds));
   }, [receivedMeds]);
 
-  // Tab State: 'inventory' or 'received' or 'dispensation'
-  const [activeTab, setActiveTab] = useState<'inventory' | 'received' | 'dispensation'>('inventory');
+  // Tab State: 'inventory' or 'received' or 'dispensation' or 'analytics'
+  const [activeTab, setActiveTab] = useState<'inventory' | 'received' | 'dispensation' | 'analytics'>('inventory');
 
   // Excel Import States
   const [isImportingExcel, setIsImportingExcel] = useState(false);
@@ -1256,6 +1310,18 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
                 <ArrowDownLeft className="w-3.5 h-3.5 text-rose-300" />
                 <span>صرف الأدوية (فاتورة صرف)</span>
               </button>
+
+              <button
+                onClick={() => setActiveTab('analytics')}
+                className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer relative flex items-center gap-1.5 ${
+                  activeTab === 'analytics' 
+                    ? 'bg-indigo-600 text-white shadow-md' 
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5 text-indigo-300 animate-pulse" />
+                <span>معدلات الصرف وتوقعات الشراء</span>
+              </button>
             </div>
 
             {activeTab === 'received' && (
@@ -1686,6 +1752,13 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
                 </table>
               </div>
             </div>
+          ) : activeTab === 'analytics' ? (
+            <PharmacyAnalytics 
+              invoices={invoices} 
+              items={items} 
+              logs={logs} 
+              triggerToast={triggerToast} 
+            />
           ) : (
             <div className="flex flex-col flex-1 divide-y divide-slate-150 dark:divide-slate-850">
               {/* Mini Banner explaining dispensation */}
@@ -1707,40 +1780,101 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
                     </div>
                   </div>
 
-                  {/* General Invoice Info */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-right">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 block">جهة الصرف المستهدفة (الكتيبة / المفرزة) <span className="text-rose-500">*</span></label>
-                      <input
-                        type="text"
-                        value={invoiceRecipient}
-                        onChange={(e) => setInvoiceRecipient(e.target.value)}
-                        placeholder="مثال: مفرزة جبهة الخوخة الكتيبة الثانية"
-                        className="w-full p-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold"
-                      />
-                      {/* Suggestion tags */}
-                      <div className="flex flex-wrap gap-1 mt-1 justify-start">
-                        {['الكتيبة الأولى', 'الكتيبة الثانية', 'مفرزة الخوخة', 'العيادة الميدانية بالمخا', 'المستشفى الميداني'].map(sug => (
+                   {/* General Invoice Info */}
+                  <div className="space-y-3">
+                    {/* Link to a Soldier in the system (Optional) */}
+                    <div className="space-y-1 relative">
+                      <label className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 block flex items-center gap-1 justify-end">
+                        <span>ربط الفاتورة بملف عسكري في النظام (اختياري)</span>
+                        <Users className="w-3.5 h-3.5 text-amber-500" />
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={soldierSearchTerm}
+                          onChange={(e) => setSoldierSearchTerm(e.target.value)}
+                          placeholder="ابحث عن العسكري بالاسم أو الرتبة للربط التلقائي وتغذية ملفه الطبي..."
+                          className="w-full p-2.5 pr-9 pl-24 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-right"
+                        />
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3.5" />
+                        
+                        {selectedSoldierForDispenseId && (
                           <button
-                            key={sug}
                             type="button"
-                            onClick={() => setInvoiceRecipient(sug)}
-                            className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[9px] font-bold text-slate-600 dark:text-slate-350 rounded transition-colors cursor-pointer"
+                            onClick={() => {
+                              setSelectedSoldierForDispenseId('');
+                              setSoldierSearchTerm('');
+                              setInvoiceRecipient('');
+                            }}
+                            className="absolute left-2 top-2 px-2 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 text-[10px] font-extrabold rounded-md flex items-center gap-1 transition-colors"
                           >
-                            {sug}
+                            <X className="w-3 h-3" />
+                            <span>إلغاء الربط</span>
                           </button>
-                        ))}
+                        )}
                       </div>
+
+                      {/* Autocomplete suggestions */}
+                      {suggestedSoldiers.length > 0 && (
+                        <div className="absolute right-0 left-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl z-50 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+                          {suggestedSoldiers.map(soldier => (
+                            <button
+                              key={soldier.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedSoldierForDispenseId(soldier.id);
+                                const fullInfo = `${soldier.rank} / ${soldier.name} - ${soldier.unit || 'اللواء 43 عمالقة'}`;
+                                setInvoiceRecipient(fullInfo);
+                                setSoldierSearchTerm(`${soldier.rank} / ${soldier.name}`);
+                              }}
+                              className="w-full px-3 py-2.5 text-right hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center justify-between text-xs transition-colors"
+                            >
+                              <span className="text-[10px] text-slate-400 font-bold font-mono">
+                                {soldier.unit || 'اللواء 43 عمالقة'}
+                              </span>
+                              <span className="font-bold text-slate-700 dark:text-slate-300">
+                                {soldier.rank} / {soldier.name}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 block">تاريخ الصرف والمستند <span className="text-rose-500">*</span></label>
-                      <input
-                        type="date"
-                        value={invoiceDate}
-                        onChange={(e) => setInvoiceDate(e.target.value)}
-                        className="w-full p-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-right"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-right">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 block">جهة الصرف المستهدفة (الكتيبة / المفرزة) <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          value={invoiceRecipient}
+                          onChange={(e) => setInvoiceRecipient(e.target.value)}
+                          placeholder="مثال: مفرزة جبهة الخوخة الكتيبة الثانية"
+                          className="w-full p-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold"
+                        />
+                        {/* Suggestion tags */}
+                        <div className="flex flex-wrap gap-1 mt-1 justify-start">
+                          {['الكتيبة الأولى', 'الكتيبة الثانية', 'مفرزة الخوخة', 'العيادة الميدانية بالمخا', 'المستشفى الميداني'].map(sug => (
+                            <button
+                              key={sug}
+                              type="button"
+                              onClick={() => setInvoiceRecipient(sug)}
+                              className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[9px] font-bold text-slate-600 dark:text-slate-350 rounded transition-colors cursor-pointer"
+                            >
+                              {sug}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 block">تاريخ الصرف والمستند <span className="text-rose-500">*</span></label>
+                        <input
+                          type="date"
+                          value={invoiceDate}
+                          onChange={(e) => setInvoiceDate(e.target.value)}
+                          className="w-full p-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-right"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -2887,68 +3021,119 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
 
       <AnimatePresence>
         {selectedInvoiceForView && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-55 flex items-center justify-center p-4 text-right no-print overflow-y-auto">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-8"
-            >
-              {/* Modal Header */}
-              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 flex-row-reverse">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-black text-xs text-slate-850 dark:text-white">
-                    معاينة وطباعة مستند صرف أدوية رسمي
-                  </h3>
-                  <Printer className="w-5 h-5 text-indigo-500" />
-                </div>
+          <div className="fixed inset-0 bg-slate-900/95 dark:bg-slate-950 z-55 flex flex-col overflow-y-auto text-right no-print">
+            <style>{`
+              @media print {
+                /* Completely hide everything in the app during print */
+                body * {
+                  visibility: hidden !important;
+                }
+                /* Make the military invoice print area and all its children visible */
+                #military-invoice-print-area, #military-invoice-print-area * {
+                  visibility: visible !important;
+                }
+                /* Place the invoice perfectly at top left of the print page with clean margins */
+                #military-invoice-print-area {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  margin: 0 !important;
+                  padding: 30px !important;
+                  border: none !important;
+                  background: white !important;
+                  color: black !important;
+                  box-shadow: none !important;
+                }
+              }
+            `}</style>
+
+            {/* Top Navigation Bar of the New Full-screen Page */}
+            <div className="sticky top-0 bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-xl z-50">
+              {/* Actions Side */}
+              <div className="flex items-center gap-3">
                 <button
+                  type="button"
                   onClick={() => setSelectedInvoiceForView(null)}
-                  className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-400 cursor-pointer"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl font-bold cursor-pointer text-xs flex items-center gap-1.5 transition-colors"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
+                  <span>الرجوع للمخزن الدوائي</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black shadow-lg flex items-center gap-1.5 cursor-pointer transition-all text-xs"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة المستند الرسمي (F8)</span>
                 </button>
               </div>
 
-              {/* Printable Area Wrapper */}
-              <div className="p-6 overflow-y-auto max-h-[70vh]">
-                <div id="military-invoice-print-area" className="bg-white text-slate-900 p-8 rounded-xl border border-slate-300 shadow-inner text-right relative font-sans space-y-6">
+              {/* Title Side */}
+              <div className="flex items-center gap-3 flex-row-reverse">
+                <div className="p-2 bg-rose-500/10 text-rose-400 rounded-xl">
+                  <ClipboardList className="w-6 h-6" />
+                </div>
+                <div className="text-right">
+                  <h3 className="font-black text-sm text-white">
+                    مستند صرف رسمي معتمد - اللواء 43 عمالقة
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold">
+                    رقم الفاتورة: <span className="font-mono text-amber-400">{selectedInvoiceForView.invoiceNumber}</span> | الحالة: معتمد ومرحل للأرشيف
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Document Workspace */}
+            <div className="flex-1 bg-slate-950/40 p-4 sm:p-8 flex items-center justify-center">
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 20, opacity: 0 }}
+                className="w-full max-w-4xl bg-white text-slate-900 rounded-2xl shadow-2xl p-1 overflow-hidden"
+              >
+                <div id="military-invoice-print-area" className="bg-white text-slate-900 p-8 sm:p-12 rounded-xl text-right relative font-sans space-y-8">
                   {/* Watermark Logo */}
                   <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
-                    <HeartPulse className="w-96 h-96 text-slate-900" />
+                    <HeartPulse className="w-[450px] h-[450px] text-slate-900" />
                   </div>
 
                   {/* Top Heading Block */}
-                  <div className="grid grid-cols-3 items-center border-b-2 border-slate-900 pb-4">
-                    <div className="text-right text-[10px] space-y-0.5 text-slate-700">
+                  <div className="grid grid-cols-3 items-center border-b-2 border-slate-900 pb-6">
+                    <div className="text-right text-xs space-y-1 text-slate-800">
                       <div>الجمهورية اليمنية</div>
-                      <div>قوات العمالقة - اللواء 43 عمالقة</div>
-                      <div className="font-extrabold">الشعبة الطبية - مستودع الصيدلية</div>
+                      <div className="font-bold">قوات العمالقة - اللواء 43 عمالقة</div>
+                      <div className="font-extrabold text-slate-900">الشعبة الطبية - مستودع الصيدلية</div>
                     </div>
                     
-                    <div className="text-center space-y-1">
-                      <div className="text-sm font-black tracking-tight text-slate-950">فاتورة صرف أدوية عسكرية</div>
-                      <div className="text-[10px] font-mono font-black bg-slate-100 px-2 py-0.5 rounded inline-block border border-slate-200 text-slate-800">
+                    <div className="text-center space-y-2">
+                      <div className="text-base font-black tracking-tight text-slate-950">فاتورة صرف أدوية ومستلزمات طبية</div>
+                      <div className="text-xs font-mono font-black bg-slate-100 px-3 py-1 rounded inline-block border border-slate-300 text-slate-850">
                         {selectedInvoiceForView.invoiceNumber}
                       </div>
                     </div>
 
-                    <div className="text-left text-[10px] space-y-0.5 text-slate-700 font-mono">
+                    <div className="text-left text-xs space-y-1 text-slate-800 font-mono">
                       <div>التاريخ: {selectedInvoiceForView.date}</div>
                       <div>رقم المرجع: {selectedInvoiceForView.id.replace('inv_', '')}</div>
-                      <div>تصنيف المستند: سري / عاجل</div>
+                      <div className="font-bold text-red-750 text-[10px]">التصنيف: سري وعاجل للغاية</div>
                     </div>
                   </div>
 
                   {/* Recipient Details & Metadata */}
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-bold text-slate-800">
-                    <div className="space-y-1 text-right">
-                      <div>جهة الاستلام المعتمدة: <span className="text-indigo-700 font-black">{selectedInvoiceForView.recipient}</span></div>
-                      <div>المسؤول عن الصرف: <span className="text-slate-600">{selectedInvoiceForView.operator}</span></div>
+                  <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-bold text-slate-800">
+                    <div className="space-y-1.5 text-right">
+                      <div>جهة الاستلام المعتمدة: <span className="text-indigo-800 font-black text-sm">{selectedInvoiceForView.recipient}</span></div>
+                      <div>المسؤول عن الصرف: <span className="text-slate-700">{selectedInvoiceForView.operator}</span></div>
                     </div>
-                    <div className="space-y-1 text-right sm:text-left">
-                      <div>الحالة: <span className="text-emerald-700 font-black">مصروف ومعتمد</span></div>
-                      <div>جهة الإصدار: اللواء 43 عمالقة - مكتب الخدمات الطبية</div>
+                    <div className="space-y-1.5 text-right sm:text-left">
+                      <div>حالة المستند: <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-black">مصروف ومثبت بالعهدة الميدانية</span></div>
+                      <div>جهة الإصدار الطبية: اللواء 43 عمالقة - قسم إدارة المستودعات والتموين</div>
                     </div>
                   </div>
 
@@ -2956,25 +3141,25 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
                   <div className="border border-slate-300 rounded-lg overflow-hidden">
                     <table className="w-full text-right text-xs">
                       <thead>
-                        <tr className="bg-slate-100 border-b border-slate-300 text-slate-800 font-black">
-                          <th className="p-2.5 text-center w-12">#</th>
-                          <th className="p-2.5 text-right">المستحضر الطبي (عربي / علمي)</th>
-                          <th className="p-2.5 text-center w-24">الكمية المصروفة</th>
-                          <th className="p-2.5 text-center w-20">الوحدة</th>
-                          <th className="p-2.5 text-right w-32">التصنيف الطبي</th>
+                        <tr className="bg-slate-100 border-b border-slate-300 text-slate-850 font-black">
+                          <th className="p-3 text-center w-12">#</th>
+                          <th className="p-3 text-right">المستحضر الطبي / المادة (عربي / علمي)</th>
+                          <th className="p-3 text-center w-32">الكمية المصروفة</th>
+                          <th className="p-3 text-center w-24">الوحدة والنوع</th>
+                          <th className="p-3 text-right w-40">التصنيف الدوائي</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 text-slate-900 font-medium">
                         {selectedInvoiceForView.items.map((item, idx) => (
-                          <tr key={item.itemId}>
-                            <td className="p-2.5 text-center font-mono font-bold">{idx + 1}</td>
-                            <td className="p-2.5 text-right">
-                              <div className="font-extrabold">{item.arabicName}</div>
-                              <div className="text-[10px] text-slate-500 font-mono">{item.name}</div>
+                          <tr key={item.itemId} className="hover:bg-slate-50/50">
+                            <td className="p-3 text-center font-mono font-bold text-slate-650">{idx + 1}</td>
+                            <td className="p-3 text-right">
+                              <div className="font-extrabold text-slate-900 text-sm">{item.arabicName}</div>
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">{item.name}</div>
                             </td>
-                            <td className="p-2.5 text-center font-mono font-black text-rose-600 text-sm">{item.quantity}</td>
-                            <td className="p-2.5 text-center text-slate-700">{item.unit}</td>
-                            <td className="p-2.5 text-right text-slate-600">{item.category}</td>
+                            <td className="p-3 text-center font-mono font-black text-rose-600 text-sm bg-rose-50/30">{item.quantity}</td>
+                            <td className="p-3 text-center text-slate-800 font-bold">{item.unit}</td>
+                            <td className="p-3 text-right text-slate-700">{item.category}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2983,83 +3168,744 @@ export default function Pharmacy({ triggerToast }: PharmacyProps) {
 
                   {/* Notes Block */}
                   {selectedInvoiceForView.notes && (
-                    <div className="p-3.5 bg-yellow-50/50 border border-yellow-200/60 rounded-xl space-y-1">
-                      <h5 className="font-black text-[10px] text-yellow-800">ملاحظات وتوجيهات الصرف الطبية الميدانية:</h5>
-                      <p className="text-xs text-slate-755 leading-relaxed font-bold">
+                    <div className="p-4 bg-yellow-50/60 border border-yellow-200/80 rounded-xl space-y-1.5">
+                      <h5 className="font-black text-xs text-yellow-800">ملاحظات وتوجيهات الصرف الطبية الميدانية:</h5>
+                      <p className="text-xs text-slate-800 leading-relaxed font-bold">
                         {selectedInvoiceForView.notes}
                       </p>
                     </div>
                   )}
 
                   {/* Bottom Signatures Block */}
-                  <div className="grid grid-cols-3 gap-4 pt-8 text-[11px] font-bold text-slate-800 text-center">
-                    <div className="space-y-8">
+                  <div className="grid grid-cols-3 gap-6 pt-12 text-xs font-bold text-slate-800 text-center font-sans">
+                    <div className="space-y-10">
                       <div>المستلم الميداني للكتيبة</div>
                       <div className="border-b border-slate-400 border-dashed w-3/4 mx-auto pt-4"></div>
-                      <div className="text-[10px] text-slate-500">الاسم والتوقيع</div>
+                      <div className="text-[10px] text-slate-500">الاسم / الرتبة والتوقيع</div>
                     </div>
                     
-                    <div className="space-y-8">
+                    <div className="space-y-10">
                       <div>ضابط مستودع الصيدلية</div>
-                      <div className="text-slate-600 pt-3 text-[10px] font-mono">عادل اليافعي</div>
+                      <div className="text-slate-700 pt-3 text-[11px] font-mono font-extrabold">عادل اليافعي</div>
                       <div className="border-b border-slate-400 border-dashed w-3/4 mx-auto pt-1"></div>
                       <div className="text-[10px] text-slate-500">الختم والتوقيع</div>
                     </div>
 
-                    <div className="space-y-8">
+                    <div className="space-y-10">
                       <div>مدير الشعبة الطبية للواء</div>
-                      <div className="text-emerald-700 font-black text-[10px]">اللواء 43 عمالقة</div>
+                      <div className="text-emerald-800 font-black text-xs">اللواء 43 عمالقة</div>
                       <div className="border-b border-slate-400 border-dashed w-3/4 mx-auto pt-1"></div>
-                      <div className="text-[10px] text-slate-500">الاعتماد الرسمي</div>
+                      <div className="text-[10px] text-slate-500">الاعتماد والموافقة الرسمية</div>
                     </div>
                   </div>
 
                   {/* Official Circular Seal */}
-                  <div className="pt-6 flex justify-between items-center text-[9px] text-slate-400 font-mono">
+                  <div className="pt-12 border-t border-slate-250 flex justify-between items-center text-[10px] text-slate-500 font-mono">
                     <span>* نسخة الحفظ والعهد الميدانية باللواء 43 عمالقة *</span>
                     <span>تم الصدور الكترونياً في: {new Date().toLocaleString('ar-YE')}</span>
                   </div>
                 </div>
-              </div>
+              </motion.div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
-              {/* Modal Footer Controls */}
-              <div className="p-4 border-t border-slate-150 dark:border-slate-850 flex justify-end gap-2 bg-slate-50 dark:bg-slate-950/30">
+// ==========================================
+// NEW: PharmacyAnalytics Component for Medication Consumption Rates & Procurement Decisions
+// ==========================================
+
+interface PharmacyAnalyticsProps {
+  invoices: DisbursementInvoice[];
+  items: PharmacyItem[];
+  logs: PharmacyLog[];
+  triggerToast: (text: string, type: 'success' | 'error' | 'info') => void;
+}
+
+function PharmacyAnalytics({ invoices, items, logs, triggerToast }: PharmacyAnalyticsProps) {
+  const [filterCategory, setFilterCategory] = useState<string>('الكل');
+  const [isPurchasePlanOpen, setIsPurchasePlanOpen] = useState(false);
+
+  // 1. Calculations & Aggregations
+  const itemCategoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    items.forEach(item => {
+      map.set(item.arabicName, item.category);
+      map.set(item.name, item.category);
+    });
+    return map;
+  }, [items]);
+
+  // Total Quantity Dispensed
+  const totalDispensedVolume = useMemo(() => {
+    let total = 0;
+    invoices.forEach(inv => {
+      inv.items.forEach(item => {
+        total += item.quantity;
+      });
+    });
+    logs.forEach(log => {
+      if (log.action === 'صرف') {
+        total += log.quantity;
+      }
+    });
+    return total;
+  }, [invoices, logs]);
+
+  // Critical items counting
+  const criticalItemsCount = useMemo(() => {
+    return items.filter(item => item.quantity <= item.minThreshold).length;
+  }, [items]);
+
+  // Total in stock items volume
+  const totalStockVolume = useMemo(() => {
+    return items.reduce((sum, item) => sum + item.quantity, 0);
+  }, [items]);
+
+  // Category consumption rates
+  const categoryData = useMemo(() => {
+    const totals: { [key: string]: number } = {
+      'مضادات حيوية': 0,
+      'مسكنات وطوارئ': 0,
+      'محاليل وإماهة': 0,
+      'مستلزمات جراحية': 0
+    };
+
+    invoices.forEach(inv => {
+      inv.items.forEach(item => {
+        const cat = item.category || itemCategoryMap.get(item.arabicName) || itemCategoryMap.get(item.name);
+        if (cat && totals[cat] !== undefined) {
+          totals[cat] += item.quantity;
+        }
+      });
+    });
+
+    logs.forEach(log => {
+      if (log.action === 'صرف') {
+        const cat = itemCategoryMap.get(log.itemName);
+        if (cat && totals[cat] !== undefined) {
+          totals[cat] += log.quantity;
+        }
+      }
+    });
+
+    return Object.entries(totals).map(([name, value]) => ({ name, value }));
+  }, [invoices, logs, itemCategoryMap]);
+
+  // Top 6 Dispensed medications
+  const medicineDispenseData = useMemo(() => {
+    const totals: { [key: string]: number } = {};
+
+    invoices.forEach(inv => {
+      inv.items.forEach(item => {
+        totals[item.arabicName] = (totals[item.arabicName] || 0) + item.quantity;
+      });
+    });
+
+    logs.forEach(log => {
+      if (log.action === 'صرف') {
+        totals[log.itemName] = (totals[log.itemName] || 0) + log.quantity;
+      }
+    });
+
+    // Sort and take top 6
+    return Object.entries(totals)
+      .map(([name, value]) => ({ name: name.split(' (')[0], value })) // simplify names for display
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [invoices, logs]);
+
+  // Top Battalions Consumption
+  const battalionDispenseData = useMemo(() => {
+    const totals: { [key: string]: number } = {};
+
+    invoices.forEach(inv => {
+      totals[inv.recipient] = (totals[inv.recipient] || 0) + inv.items.reduce((sum, i) => sum + i.quantity, 0);
+    });
+
+    logs.forEach(log => {
+      if (log.action === 'صرف') {
+        totals[log.recipient] = (totals[log.recipient] || 0) + log.quantity;
+      }
+    });
+
+    return Object.entries(totals)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  }, [invoices, logs]);
+
+  const topConsumingBattalion = useMemo(() => {
+    if (battalionDispenseData.length === 0) return 'لا يوجد';
+    return battalionDispenseData[0].name;
+  }, [battalionDispenseData]);
+
+  // Procurement Suggestions Table Data
+  const procurementSuggestions = useMemo(() => {
+    return items.map(item => {
+      const isCritical = item.quantity <= item.minThreshold;
+      const isOutOfStock = item.quantity === 0;
+      
+      // Recommendation quantity to restore stock to 2x minThreshold
+      const recommendedPurchase = isCritical ? Math.max(0, (item.minThreshold * 2.5) - item.quantity) : 0;
+      
+      let statusLabel = 'آمن ومستقر';
+      let statusColor = 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20';
+      let priorityLabel = 'منخفضة';
+      let priorityColor = 'text-slate-500 bg-slate-100 dark:bg-slate-850';
+
+      if (isOutOfStock) {
+        statusLabel = 'نفاد تام للكمية 🚨';
+        statusColor = 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30';
+        priorityLabel = 'قصوى عاجلة جداً';
+        priorityColor = 'text-white bg-rose-600 dark:bg-rose-700';
+      } else if (isCritical) {
+        statusLabel = 'تحت حد الأمان ⚠️';
+        statusColor = 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20';
+        priorityLabel = 'عالية جداً';
+        priorityColor = 'text-slate-900 bg-amber-400 dark:bg-amber-500';
+      }
+
+      return {
+        ...item,
+        isCritical,
+        isOutOfStock,
+        recommendedPurchase: Math.ceil(recommendedPurchase),
+        statusLabel,
+        statusColor,
+        priorityLabel,
+        priorityColor
+      };
+    }).sort((a, b) => {
+      // Prioritize out of stock, then critical, then alphabetical
+      if (a.isOutOfStock && !b.isOutOfStock) return -1;
+      if (!a.isOutOfStock && b.isOutOfStock) return 1;
+      if (a.isCritical && !b.isCritical) return -1;
+      if (!a.isCritical && b.isCritical) return 1;
+      return b.minThreshold - a.minThreshold;
+    });
+  }, [items]);
+
+  const filteredSuggestions = useMemo(() => {
+    if (filterCategory === 'الكل') return procurementSuggestions;
+    return procurementSuggestions.filter(item => item.category === filterCategory);
+  }, [procurementSuggestions, filterCategory]);
+
+  const totalDeficienciesToOrder = useMemo(() => {
+    return procurementSuggestions.filter(item => item.isCritical).length;
+  }, [procurementSuggestions]);
+
+  // Color Palette
+  const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+
+  return (
+    <div className="flex flex-col flex-1 divide-y divide-slate-150 dark:divide-slate-850">
+      {/* Banner Area */}
+      <div className="p-4 bg-indigo-500/5 dark:bg-indigo-500/10 border-b border-indigo-500/10 text-right space-y-1">
+        <h4 className="text-xs font-black text-indigo-800 dark:text-indigo-300">لوحة تحليلات معدلات الاستهلاك وتقرير الاحتياجات الشرائية الطبية</h4>
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+          يقوم النظام آلياً بتحليل كافة عمليات فواتير الصرف الصادرة للوحدات والكتائب الميدانية وحساب معدلات السحب الحالية لتحديد النقص الفعلي وتوفير توصيات شراء ذكية مبنية على حدود الأمان والطلب المعتمدة عسكرياً.
+        </p>
+      </div>
+
+      {/* KPI Cards Grid */}
+      <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-right">
+        {/* Card 1: Total Dispensation Volume */}
+        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="space-y-1">
+            <span className="text-[10px] font-black text-slate-400 block">إجمالي الكميات المصروفة (السحب الميداني)</span>
+            <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
+              {totalDispensedVolume.toLocaleString('ar-YE')} <span className="text-xs font-sans text-slate-500">مستحضر</span>
+            </div>
+            <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-0.5 justify-end">
+              <span>+100% دقة رصد حي</span>
+            </span>
+          </div>
+          <div className="p-3 bg-indigo-500/10 text-indigo-500 rounded-xl">
+            <ArrowUpRight className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Card 2: Critical Out of Stock Deficiencies */}
+        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="space-y-1">
+            <span className="text-[10px] font-black text-slate-400 block">الأصناف الحرجة (تحت حد الأمان)</span>
+            <div className="text-xl font-black text-rose-600 dark:text-rose-400 font-mono">
+              {criticalItemsCount} <span className="text-xs font-sans text-slate-500">مستحضرات عاجلة</span>
+            </div>
+            <span className="text-[9px] text-rose-500 font-bold flex items-center gap-0.5 justify-end">
+              <span>تتطلب شراء وتعويض فوري</span>
+            </span>
+          </div>
+          <div className="p-3 bg-rose-500/10 text-rose-500 rounded-xl">
+            <AlertTriangle className="w-5 h-5 animate-pulse" />
+          </div>
+        </div>
+
+        {/* Card 3: Top Recipient Battalion */}
+        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="space-y-1">
+            <span className="text-[10px] font-black text-slate-400 block">الجهة الأكثر استهلاكاً وطلباً للأدوية</span>
+            <div className="text-xs font-extrabold text-indigo-700 dark:text-indigo-400 leading-normal truncate max-w-[180px]">
+              {topConsumingBattalion}
+            </div>
+            <span className="text-[9px] text-slate-500 block">بناءً على فواتير الصرف المؤرشفة</span>
+          </div>
+          <div className="p-3 bg-amber-500/10 text-amber-500 rounded-xl">
+            <Users className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Card 4: Store Safety Level */}
+        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="space-y-1">
+            <span className="text-[10px] font-black text-slate-400 block">الرصيد الإجمالي المتوفر بالمستودعات</span>
+            <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
+              {totalStockVolume.toLocaleString('ar-YE')} <span className="text-xs font-sans text-slate-500">مستحضر</span>
+            </div>
+            <span className="text-[9px] text-slate-500 block">موزع على مخازن اللواء والمحاور</span>
+          </div>
+          <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl">
+            <Store className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
+      {/* Recharts Graphical Visualizations Section */}
+      <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 no-print">
+        {/* Chart 1: Bar Chart of Top Medications (7 Cols) */}
+        <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 rounded-xl p-4 flex flex-col space-y-4 shadow-sm">
+          <div className="flex justify-between items-center flex-row-reverse border-b border-slate-100 dark:border-slate-850 pb-2">
+            <div className="flex items-center gap-1.5">
+              <span className="p-1.5 bg-indigo-500/10 text-indigo-500 rounded-lg">
+                <TrendingUp className="w-4 h-4" />
+              </span>
+              <h4 className="font-extrabold text-xs text-slate-850 dark:text-white">الأدوية والمستلزمات الأكثر سحباً وصرفاً بالوحدات الميدانية</h4>
+            </div>
+            <span className="text-[9px] text-slate-400">معدل سحب تراكمي بالكميات</span>
+          </div>
+
+          <div className="w-full h-64 text-right" style={{ direction: 'ltr' }}>
+            {medicineDispenseData.length === 0 ? (
+              <div className="w-full h-full flex items-center justify-center text-xs text-slate-400 font-bold">
+                لا توجد بيانات صرف كافية لتوليد المخطط البياني حالياً.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={medicineDispenseData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#888888' }} interval={0} />
+                  <YAxis tick={{ fontSize: 9, fill: '#888888' }} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff', textAlign: 'right', fontSize: '10px' }} 
+                    labelStyle={{ fontWeight: 'bold', color: '#38bdf8' }}
+                  />
+                  <Bar dataKey="value" name="الكمية المصروفة" fill="#6366f1" radius={[4, 4, 0, 0]}>
+                    {medicineDispenseData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Chart 2: Category Consumption Breakdown (5 Cols) */}
+        <div className="lg:col-span-5 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 rounded-xl p-4 flex flex-col space-y-4 shadow-sm">
+          <div className="flex justify-between items-center flex-row-reverse border-b border-slate-100 dark:border-slate-850 pb-2">
+            <div className="flex items-center gap-1.5">
+              <span className="p-1.5 bg-emerald-500/10 text-emerald-500 rounded-lg">
+                <HeartPulse className="w-4 h-4" />
+              </span>
+              <h4 className="font-extrabold text-xs text-slate-850 dark:text-white">تحليل ونسب الصرف حسب التصنيف الطبي للأدوية</h4>
+            </div>
+            <span className="text-[9px] text-slate-400">توزيع فئات الاستهلاك</span>
+          </div>
+
+          <div className="w-full h-64 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <div className="w-full sm:w-1/2 h-44" style={{ direction: 'ltr' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={65}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff', textAlign: 'right', fontSize: '10px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="w-full sm:w-1/2 text-right space-y-2">
+              {categoryData.map((cat, index) => {
+                const total = categoryData.reduce((sum, c) => sum + c.value, 0) || 1;
+                const percentage = Math.round((cat.value / total) * 100);
+                return (
+                  <div key={cat.name} className="flex justify-between items-center text-[10px] font-bold">
+                    <span className="text-slate-400 font-mono">{percentage}% ({cat.value} حبة/عبوة)</span>
+                    <div className="flex items-center gap-1.5 flex-row-reverse">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                      <span className="text-slate-700 dark:text-slate-350">{cat.name}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Purchasing Recommendations Table Panel */}
+      <div className="p-6 flex flex-col space-y-4">
+        {/* Panel Header */}
+        <div className="flex justify-between items-center flex-wrap gap-4 flex-row-reverse pb-2 border-b border-slate-100 dark:border-slate-850">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-indigo-500/10 text-indigo-500 rounded-xl">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <div className="text-right">
+              <h4 className="font-extrabold text-xs text-slate-800 dark:text-white">جدول تحليل المخازن ومقترحات الشراء الميداني</h4>
+              <p className="text-[10px] text-slate-400">اضغط على زر (عرض وتصدير خطة الشراء الموحدة) لطباعة وتصدير مستند أمر التوريد والطلب الرسمي للقيادة.</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (totalDeficienciesToOrder === 0) {
+                  triggerToast('مخزون اللواء الطبي مستقر حالياً بكافة الأصناف ولا توجد أي نواقص', 'info');
+                  return;
+                }
+                setIsPurchasePlanOpen(true);
+              }}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-xs shadow-md shadow-indigo-600/10 flex items-center gap-1.5 cursor-pointer transition-all"
+            >
+              <Printer className="w-4 h-4" />
+              <span>عرض وتصدير خطة الشراء الموحدة ({totalDeficienciesToOrder} صنف حرج)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Category Filters for Suggestion */}
+        <div className="flex flex-wrap gap-1.5 justify-end">
+          {['الكل', 'مضادات حيوية', 'مسكنات وطوارئ', 'محاليل وإماهة', 'مستلزمات جراحية'].map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setFilterCategory(cat)}
+              className={`px-3 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-all ${
+                filterCategory === cat 
+                  ? 'bg-slate-850 dark:bg-slate-700 text-white shadow' 
+                  : 'bg-slate-100 dark:bg-slate-850 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* Recommendations Table Layout */}
+        <div className="border border-slate-150 dark:border-slate-800/80 rounded-xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-950/30 border-b border-slate-150 dark:border-slate-850 text-slate-400 font-bold">
+                  <th className="p-3">اسم المستحضر الطبي المعتمد</th>
+                  <th className="p-3 text-center">حالة المخزون الحالي</th>
+                  <th className="p-3 text-center">الرصيد المتوفر</th>
+                  <th className="p-3 text-center">حد الأمان الأدنى</th>
+                  <th className="p-3">مستوى النقص وحجم التعبئة</th>
+                  <th className="p-3 text-center">الكمية المقترحة للشراء العاجل</th>
+                  <th className="p-3 text-center">أولوية الشراء الميداني</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-850/60 text-slate-900 dark:text-slate-200">
+                {filteredSuggestions.map((item) => {
+                  const safetyPercentage = Math.min(100, Math.round((item.quantity / item.minThreshold) * 100));
+                  return (
+                    <tr 
+                      key={item.id} 
+                      className={`hover:bg-slate-50/50 dark:hover:bg-slate-950/20 font-medium ${
+                        item.isOutOfStock 
+                          ? 'bg-rose-500/5 dark:bg-rose-500/10' 
+                          : item.isCritical 
+                            ? 'bg-amber-500/5 dark:bg-amber-500/10' 
+                            : ''
+                      }`}
+                    >
+                      {/* Name of Medicine */}
+                      <td className="p-3">
+                        <div className="font-black text-slate-900 dark:text-white text-xs">{item.arabicName}</div>
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{item.name}</div>
+                      </td>
+
+                      {/* Stock Status Badge */}
+                      <td className="p-3 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-black inline-block ${item.statusColor}`}>
+                          {item.statusLabel}
+                        </span>
+                      </td>
+
+                      {/* Available Qty */}
+                      <td className="p-3 text-center font-mono font-black text-xs text-slate-900 dark:text-white">
+                        {item.quantity} {item.unit}
+                      </td>
+
+                      {/* Min Threshold Qty */}
+                      <td className="p-3 text-center font-mono font-bold text-slate-500 dark:text-slate-400">
+                        {item.minThreshold} {item.unit}
+                      </td>
+
+                      {/* Progress visual safety indicator */}
+                      <td className="p-3 min-w-[150px]">
+                        <div className="space-y-1 text-right">
+                          <div className="flex justify-between items-center text-[9px] font-bold text-slate-400">
+                            <span>{safetyPercentage}% من حد الأمان</span>
+                            <span>الوضع الميداني</span>
+                          </div>
+                          <div className="w-full bg-slate-150 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              style={{ width: `${safetyPercentage}%` }} 
+                              className={`h-full rounded-full ${
+                                item.isOutOfStock 
+                                  ? 'bg-rose-600' 
+                                  : item.isCritical 
+                                    ? 'bg-amber-500 animate-pulse' 
+                                    : 'bg-emerald-500'
+                              }`} 
+                            />
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Recommended Qty to buy */}
+                      <td className="p-3 text-center font-mono font-black text-sm text-slate-900 dark:text-white">
+                        {item.isCritical ? (
+                          <span className="text-indigo-600 dark:text-indigo-400">
+                            +{item.recommendedPurchase} {item.unit}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-bold">-</span>
+                        )}
+                      </td>
+
+                      {/* Priority Badges */}
+                      <td className="p-3 text-center">
+                        {item.isCritical ? (
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black ${item.priorityColor}`}>
+                            {item.priorityLabel}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 dark:text-slate-500 font-bold text-[10px]">مستقر ✅</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Official Procurement Purchase Plan Modal Overlay (Full Page styled for military official print) */}
+      <AnimatePresence>
+        {isPurchasePlanOpen && (
+          <div className="fixed inset-0 bg-slate-900/95 dark:bg-slate-950 z-55 flex flex-col overflow-y-auto text-right no-print">
+            <style>{`
+              @media print {
+                body * {
+                  visibility: hidden !important;
+                }
+                #military-purchase-plan-print-area, #military-purchase-plan-print-area * {
+                  visibility: visible !important;
+                }
+                #military-purchase-plan-print-area {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  margin: 0 !important;
+                  padding: 30px !important;
+                  border: none !important;
+                  background: white !important;
+                  color: black !important;
+                  box-shadow: none !important;
+                }
+              }
+            `}</style>
+
+            {/* Modal top navigation bar */}
+            <div className="sticky top-0 bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-xl z-50">
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setSelectedInvoiceForView(null)}
-                  className="px-4 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-bold cursor-pointer text-xs"
+                  onClick={() => setIsPurchasePlanOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl font-bold cursor-pointer text-xs flex items-center gap-1.5 transition-colors"
                 >
-                  إغلاق النافذة
+                  <X className="w-4 h-4" />
+                  <span>إغلاق المقترح والرجوع</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => {
-                    const printContents = document.getElementById('military-invoice-print-area')?.innerHTML;
-                    if (printContents) {
-                      const printWindow = window.open('', '', 'height=600,width=800');
-                      if (printWindow) {
-                        printWindow.document.write('<html><head><title>فاتورة صرف أدوية عسكرية</title>');
-                        printWindow.document.write('<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">');
-                        printWindow.document.write('</head><body class="p-8" style="direction: rtl;">');
-                        printWindow.document.write('<div id="print-content">');
-                        printWindow.document.write(printContents);
-                        printWindow.document.write('</div></body></html>');
-                        printWindow.document.close();
-                        printWindow.focus();
-                        setTimeout(() => {
-                          printWindow.print();
-                          printWindow.close();
-                        }, 500);
-                      }
-                    }
+                    window.print();
                   }}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black shadow-lg flex items-center gap-1.5 cursor-pointer transition-all text-xs"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black shadow-lg flex items-center gap-1.5 cursor-pointer transition-all text-xs"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>طباعة الفاتورة الطبية</span>
+                  <span>طباعة مستند طلب الشراء الرسمي (F8)</span>
                 </button>
               </div>
-            </motion.div>
+
+              <div className="flex items-center gap-3 flex-row-reverse">
+                <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-xl">
+                  <Database className="w-6 h-6" />
+                </div>
+                <div className="text-right">
+                  <h3 className="font-black text-sm text-white">
+                    طلب تموين وتأمين دوائي رسمي وعاجل
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold">
+                    موجه لقيادة قوات العمالقة - دائرة الإمداد الطبي العسكري
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Document workspace */}
+            <div className="flex-1 bg-slate-950/40 p-4 sm:p-8 flex items-center justify-center">
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 20, opacity: 0 }}
+                className="w-full max-w-4xl bg-white text-slate-900 rounded-2xl shadow-2xl p-1 overflow-hidden"
+              >
+                <div id="military-purchase-plan-print-area" className="bg-white text-slate-900 p-8 sm:p-12 rounded-xl text-right relative font-sans space-y-8">
+                  {/* Watermark Logo */}
+                  <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
+                    <HeartPulse className="w-[450px] h-[450px] text-slate-900" />
+                  </div>
+
+                  {/* Top Heading Block */}
+                  <div className="grid grid-cols-3 items-center border-b-2 border-slate-900 pb-6">
+                    <div className="text-right text-xs space-y-1 text-slate-800">
+                      <div>الجمهورية اليمنية</div>
+                      <div className="font-bold">قوات العمالقة - اللواء 43 عمالقة</div>
+                      <div className="font-extrabold text-slate-900">الشعبة الطبية - رئيس اللجنة الدوائية</div>
+                    </div>
+                    
+                    <div className="text-center space-y-2">
+                      <div className="text-base font-black tracking-tight text-slate-950">مذكرة الاحتياجات ومقترح الشراء الطبي العاجل</div>
+                      <div className="text-xs font-mono font-black bg-slate-100 px-3 py-1 rounded inline-block border border-slate-300 text-slate-850">
+                        طلب شراء - 43 - {new Date().getFullYear()}
+                      </div>
+                    </div>
+
+                    <div className="text-left text-xs space-y-1 text-slate-800 font-mono">
+                      <div>التاريخ: {new Date().toLocaleDateString('ar-YE')}</div>
+                      <div>الرقم المرجعي: REQ-43-PROCUR</div>
+                      <div className="font-bold text-red-750 text-[10px]">التصنيف: سري وعاجل للغاية</div>
+                    </div>
+                  </div>
+
+                  {/* Procurement Request Letter Intro */}
+                  <div className="space-y-3 text-xs leading-relaxed font-bold text-slate-800 text-right">
+                    <div><b>إلى الأخوة:</b> مدير دائرة الإمداد والخدمات الطبية العسكرية - قيادة قوات العمالقة المحترمين</div>
+                    <div><b>بعد التحية والتقدير،،</b></div>
+                    <p className="text-slate-750 text-justify">
+                      نظراً لاستمرار المهام والواجبات القتالية المنوطة بكتائب وألوية اللواء 43 عمالقة في محاور وجبهات الساحل الغربي، وبناءً على البيانات الإحصائية والتحليلية المستمدة من منظومة صرف الصيدلية والعهد الميدانية في اللواء، نرفع إليكم مذكرة الاحتياجات الطبية العاجلة لطلب توريد وشراء مستحضرات طبية هامة لتلافي العجز الدوائي وسد الثغرات قبل نفاد المخزون بالكامل في مستودع الصيدلية الرئيسي.
+                    </p>
+                  </div>
+
+                  {/* Deficiency Table */}
+                  <div className="border border-slate-300 rounded-lg overflow-hidden">
+                    <table className="w-full text-right text-xs">
+                      <thead>
+                        <tr className="bg-slate-100 border-b border-slate-300 text-slate-850 font-black">
+                          <th className="p-3 text-center w-12">#</th>
+                          <th className="p-3 text-right">المادة والمستحضر الطبي المطلوب</th>
+                          <th className="p-3 text-center w-24">الرصيد الحالي</th>
+                          <th className="p-3 text-center w-24">حد الأمان المعتمد</th>
+                          <th className="p-3 text-center w-36">الكمية المقترحة للشراء</th>
+                          <th className="p-3 text-right w-36">التصنيف الطبي</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 text-slate-900 font-medium">
+                        {procurementSuggestions.filter(item => item.isCritical).map((item, idx) => (
+                          <tr key={item.id} className="hover:bg-slate-50/50">
+                            <td className="p-3 text-center font-mono font-bold text-slate-650">{idx + 1}</td>
+                            <td className="p-3 text-right">
+                              <div className="font-extrabold text-slate-900 text-sm">{item.arabicName}</div>
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">{item.name}</div>
+                            </td>
+                            <td className="p-3 text-center font-mono font-bold text-rose-600 bg-rose-50/30">{item.quantity} {item.unit}</td>
+                            <td className="p-3 text-center font-mono text-slate-700">{item.minThreshold} {item.unit}</td>
+                            <td className="p-3 text-center font-mono font-black text-indigo-700 bg-indigo-50/30 text-sm">+{item.recommendedPurchase} {item.unit}</td>
+                            <td className="p-3 text-right text-slate-700">{item.category}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Justification & Procurement Recommendation Notes */}
+                  <div className="p-4 bg-yellow-50/60 border border-yellow-200/80 rounded-xl space-y-2">
+                    <h5 className="font-black text-xs text-yellow-800 flex items-center gap-1 flex-row-reverse">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      <span>توجيهات ومبررات الشراء الطبية الاستراتيجية:</span>
+                    </h5>
+                    <ul className="list-disc list-inside text-xs text-slate-800 space-y-1 pr-4 font-bold">
+                      <li>تعتبر المواد المحددة باللون الأحمر تالفة أو نفدت بالكامل من المخزون، مما يؤثر بشكل مباشر على تقديم الخدمات الجراحية وطب الطوارئ للجنود المصابين بالجبهة.</li>
+                      <li>الكميات المقترحة للشراء تم احتسابها ديناميكياً لتصل بالمخزون إلى نسبة 250% من حد الأمان الأدنى المعتمد وهو المعيار القياسي لضمان التغطية لمدة 6 أشهر قادمة.</li>
+                      <li>يرجى سرعة مراجعة أمر التوريد والاعتماد المالي وإرساله لوكلاء الشراء وموزعي الأدوية لتفادي توقف الصيدلية.</li>
+                    </ul>
+                  </div>
+
+                  {/* Signatures block */}
+                  <div className="grid grid-cols-3 gap-6 pt-12 text-xs font-bold text-slate-800 text-center font-sans">
+                    <div className="space-y-10">
+                      <div>المسؤول الفني للصيدلية</div>
+                      <div className="text-slate-700 pt-3 text-[11px] font-mono font-extrabold">عادل اليافعي</div>
+                      <div className="border-b border-slate-400 border-dashed w-3/4 mx-auto pt-1"></div>
+                      <div className="text-[10px] text-slate-500">الاسم والتوقيع</div>
+                    </div>
+                    
+                    <div className="space-y-10">
+                      <div>مدير الشعبة الطبية للواء 43</div>
+                      <div className="text-emerald-800 font-black text-xs">اللواء 43 عمالقة</div>
+                      <div className="border-b border-slate-400 border-dashed w-3/4 mx-auto pt-4"></div>
+                      <div className="text-[10px] text-slate-500">الختم والتوقيع</div>
+                    </div>
+
+                    <div className="space-y-10">
+                      <div>رئيس اللجنة الدوائية العسكرية</div>
+                      <div className="border-b border-slate-400 border-dashed w-3/4 mx-auto pt-8"></div>
+                      <div className="text-[10px] text-slate-500">الاعتماد والتوقيع الرسمي</div>
+                    </div>
+                  </div>
+
+                  {/* Print footer */}
+                  <div className="pt-12 border-t border-slate-250 flex justify-between items-center text-[10px] text-slate-500 font-mono">
+                    <span>* مستند معتمد لتأمين الاحتياجات الشرائية باللواء 43 عمالقة *</span>
+                    <span>تم التحليل الكترونياً في: {new Date().toLocaleString('ar-YE')}</span>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
           </div>
         )}
       </AnimatePresence>
